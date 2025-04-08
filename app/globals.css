@@ -1,26 +1,21 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@font-face {
+  font-family: line;
+  src: url(../public/font/LINESeedSansTH_W_Rg.woff2);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+@font-face {
+  font-family: line-bold;
+  src: url(../public/font/LINESeedSansTH_W_Bd.woff2);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+body, html {
+  padding: 0;
+  margin: 0;
+  font-family: line;
+  background-image: url(../public/background.png);
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-position: center;
 }
