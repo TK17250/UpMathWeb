@@ -5,6 +5,8 @@ import Link from "next/link"
 import { useActionState, useEffect, useState } from "react"
 import { register } from "../action/auth"
 import Alert1, { AlertType } from "../component/alert1"
+import { getUser } from "../action/getuser"
+import { useRouter } from "next/navigation"
 
 const Alert = {
     title: "",
@@ -15,13 +17,28 @@ const Alert = {
 export default function Login() {
     const [showPassword, setShowPassword] = useState<boolean>(false)
     const [action, formAction] = useActionState(register, Alert)
+    const router = useRouter()
 
     // Show alert when action is completed
     useEffect(() => {
         if (action && action.title && action.message && action.type && window.showAlert) {
             window.showAlert(action.title, action.message, action.type as AlertType);
         }
+
+        // Redirect to home page if action is success
+        if (action && action.type === "success") {
+            router.push("/")
+        }
     }, [action]);
+
+    // Check login
+    useEffect(() => {
+        getUser().then((res: any) => {
+            if (res) {
+                router.push("/")
+            }
+        })
+    }, [router])
 
     return (
         <>
@@ -42,7 +59,7 @@ export default function Login() {
                 </div>
 
                 <div className="sm:mx-auto sm:w-full sm:max-w-[480px] p-8">
-                    <form action={formAction} method="POST" className="space-y-6">
+                    <form action={formAction} className="space-y-6">
                         {/* Full name */}
                         <div>
                             <div className="mt-2">

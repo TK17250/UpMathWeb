@@ -2,14 +2,50 @@
 import { faEye, faEyeSlash } from "@fortawesome/free-solid-svg-icons"
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome"
 import Link from "next/link"
-import { useState } from "react"
+import { useActionState, useEffect, useState } from "react"
+import { getUser } from "../action/getuser"
+import { useRouter } from "next/navigation"
+import { login } from "../action/auth"
+import Alert1, { AlertType } from "../component/alert1"
+
+const Alert = {
+  title: "",
+  message: "",
+  type: "",
+}
 
 export default function Login() {
   const [showPassword, setShowPassword] = useState<boolean>(false)
+  const [action, formAction] = useActionState(login, Alert)
+  const router = useRouter()
+
+  // Show alert when action is completed
+  useEffect(() => {
+      if (action && action.title && action.message && action.type && window.showAlert) {
+          window.showAlert(action.title, action.message, action.type as AlertType);
+      }
+
+      // Redirect to home page if action is success
+      if (action && action.type === "success") {
+          router.push("/")
+      }
+  }, [action]);
+
+  // Check login
+  useEffect(() => {
+    getUser().then((res: any) => {
+      if (res) {
+        router.push("/")
+      }
+    })
+  }, [router])
 
   return (
     <>
       <div className="flex min-h-full flex-1 flex-col justify-center py-12 sm:px-6 lg:px-8 h-screen overflow-hidden">
+        {/* Alert */}
+        <Alert1 />
+
         <div className="sm:mx-auto sm:w-full sm:max-w-md">
           <h2 className="mb-6 text-center text-3xl/9 font-bold tracking-tight text-[#57CC99]">
             เข้าสู่ระบบ <span className="text-[#CCCCCC] text-lg">สำหรับคุณครู</span>
@@ -22,7 +58,7 @@ export default function Login() {
         </div>
 
         <div className="sm:mx-auto sm:w-full sm:max-w-[480px] p-8">
-          <form action="#" method="POST" className="space-y-6">
+          <form action={formAction} className="space-y-6">
             {/* Email */}
             <div>
               <div className="mt-2">
@@ -51,7 +87,7 @@ export default function Login() {
                   className="block w-full rounded-md bg-[#203D4F] px-3 py-1.5 text-base text-white -outline-offset-1 border-2 outline-none border-[#002D4A] sm:text-sm/6 transition-all duration-300 placeholder:text-[#CCCCCC]"
                 />
 
-                <FontAwesomeIcon icon={showPassword ? faEye : faEyeSlash} className="absolute right-3 top-1/2 -translate-y-1/2 text-white cursor-pointer" onClick={() => setShowPassword(!showPassword)}  />
+                <FontAwesomeIcon icon={showPassword ? faEye : faEyeSlash} className="absolute right-3 top-1/2 -translate-y-1/2 text-white cursor-pointer" onClick={() => setShowPassword(!showPassword)} />
               </div>
             </div>
 
