@@ -1,6 +1,12 @@
 'use client'
+import { faEye, faEyeSlash } from "@fortawesome/free-solid-svg-icons"
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome"
+import Link from "next/link"
+import { useState } from "react"
 
 export default function Login() {
+  const [showPassword, setShowPassword] = useState<boolean>(false)
+
   return (
     <>
       <div className="flex min-h-full flex-1 flex-col justify-center py-12 sm:px-6 lg:px-8 h-screen overflow-hidden">
@@ -34,16 +40,18 @@ export default function Login() {
 
             {/* Password */}
             <div>
-              <div className="mt-2">
+              <div className="mt-2 relative">
                 <input
                   id="password"
                   name="password"
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   required
                   placeholder="รหัสผ่าน"
                   autoComplete="off"
                   className="block w-full rounded-md bg-[#203D4F] px-3 py-1.5 text-base text-white -outline-offset-1 border-2 outline-none border-[#002D4A] sm:text-sm/6 transition-all duration-300 placeholder:text-[#CCCCCC]"
                 />
+
+                <FontAwesomeIcon icon={showPassword ? faEye : faEyeSlash} className="absolute right-3 top-1/2 -translate-y-1/2 text-white cursor-pointer" onClick={() => setShowPassword(!showPassword)}  />
               </div>
             </div>
 
@@ -61,9 +69,9 @@ export default function Login() {
 
               {/* Sign in */}
               <div className="text-sm/6">
-                <a href="#" className="font-semibold text-white hover:text-[#CCCCCC] transition-all duration-300">
+                <Link href="/register" className="font-semibold text-white hover:text-[#CCCCCC] transition-all duration-300">
                   หากยังไม่มีบัญชี
-                </a>
+                </Link>
               </div>
             </div>
           </form>
