@@ -2,14 +2,33 @@
 import { faEye, faEyeSlash } from "@fortawesome/free-solid-svg-icons"
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome"
 import Link from "next/link"
-import { useState } from "react"
+import { useActionState, useEffect, useState } from "react"
+import { register } from "../action/auth"
+import Alert1, { AlertType } from "../component/alert1"
+
+const Alert = {
+    title: "",
+    message: "",
+    type: "",
+}
 
 export default function Login() {
     const [showPassword, setShowPassword] = useState<boolean>(false)
+    const [action, formAction] = useActionState(register, Alert)
+
+    // Show alert when action is completed
+    useEffect(() => {
+        if (action && action.title && action.message && action.type && window.showAlert) {
+            window.showAlert(action.title, action.message, action.type as AlertType);
+        }
+    }, [action]);
 
     return (
         <>
-            <div className="flex min-h-full flex-1 flex-col justify-center py-12 sm:px-6 lg:px-8 h-screen overflow-hidden">
+            <div className="flex min-h-full flex-1 flex-col justify-center py-12 sm:px-6 lg:px-8 overflow-scroll h-screen">
+                {/* Alert */}
+                <Alert1 />
+
                 {/* Logo */}
                 <div className="sm:mx-auto sm:w-full sm:max-w-md">
                     <h2 className="mb-6 text-center text-3xl/9 font-bold tracking-tight text-[#57CC99]">
@@ -23,7 +42,7 @@ export default function Login() {
                 </div>
 
                 <div className="sm:mx-auto sm:w-full sm:max-w-[480px] p-8">
-                    <form action="#" method="POST" className="space-y-6">
+                    <form action={formAction} method="POST" className="space-y-6">
                         {/* Full name */}
                         <div>
                             <div className="mt-2">
