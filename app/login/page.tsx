@@ -5,7 +5,7 @@ import Link from "next/link"
 import { useActionState, useEffect, useState } from "react"
 import { getUser } from "../action/getuser"
 import { useRouter } from "next/navigation"
-import { login } from "../action/auth"
+import { googleLogin, login } from "../auth/auth"
 import Alert1, { AlertType } from "../component/alert1"
 
 const Alert = {
@@ -17,6 +17,7 @@ const Alert = {
 export default function Login() {
   const [showPassword, setShowPassword] = useState<boolean>(false)
   const [action, formAction] = useActionState(login, Alert)
+  const [isLoading, setIsLoading] = useState<boolean>(false)
   const router = useRouter()
 
   // Show alert when action is completed
@@ -39,6 +40,32 @@ export default function Login() {
       }
     })
   }, [router])
+
+  // Handle Google login
+  const handleGoogleLogin = async () => {
+    setIsLoading(true)
+    try {
+      const res = await googleLogin()
+      if (res && res.url) {
+        window.location.href = res.url;
+        return;
+      }
+      
+      if (res && window.showAlert) {
+        const title = await res.title;
+        const message = await res.message;
+        const type = await res.type;
+        window.showAlert(title, message, type as AlertType);
+      }
+    } catch (error) {
+      if (window.showAlert) {
+        console.log(`เกิดข้อผิดพลาดทางฝั่งเซิร์ฟเวอร์: ${error}`)
+        window.showAlert("เกิดข้อผิดพลาด", "กรุณาลองใหม่ภายหลัง", "error" as AlertType)
+      }
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   return (
     <>
@@ -122,9 +149,11 @@ export default function Login() {
             </div>
 
             {/* Google */}
-            <a
-              href="#"
-              className="flex w-full items-center justify-center gap-3 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 shadow-xs ring-gray-300 ring-inset hover:bg-gray-100 transition-all focus-visible:ring-transparent mt-6"
+            <button
+              type="submit"
+              onClick={handleGoogleLogin}
+              disabled={isLoading}
+              className="flex w-full items-center justify-center gap-3 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 shadow-xs ring-gray-300 ring-inset hover:bg-gray-100 transition-all focus-visible:ring-transparent mt-6 cursor-pointer"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
                 <path
@@ -144,8 +173,8 @@ export default function Login() {
                   fill="#34A853"
                 />
               </svg>
-              <span className="text-sm/6 font-bold">เข้าสู่ระบบด้วย Google</span>
-            </a>
+              <span className="text-sm/6 font-bold">{isLoading ? "กำลังดำเนินการ..." : "เข้าสู่ระบบด้วย Google"}              </span>
+            </button>
           </div>
         </div>
       </div>

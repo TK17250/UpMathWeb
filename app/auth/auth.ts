@@ -1,5 +1,7 @@
 'use server'
 import { createSupabaseServerClient } from "@/server/server"
+import { translateServerSupabaseErrorToThai } from "@/server/error"
+import { NextResponse } from "next/server"
 
 // Login
 async function login(prevState: any, formData: FormData): Promise<any> {
@@ -25,7 +27,7 @@ async function login(prevState: any, formData: FormData): Promise<any> {
         })
 
         // Check error login
-        if (error) return { title: "เกิดข้อผิดพลาด", message: error.message, type: "error", }
+        if (error) return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(error), type: "error", }
 
         return { title: "สำเร็จ", message: "เข้าสู่ระบบสำเร็จ", type: "success", }
     } catch (error: any) {
@@ -80,7 +82,7 @@ async function register(prevState: any, formData: FormData): Promise<any> {
             password: password,
         })
         //  Check error register 
-        if (error) return { title: "เกิดข้อผิดพลาด", message: error.message, type: "error", }
+        if (error) return { title: "เกิดข้อผิดพลาด", message: await translateServerSupabaseErrorToThai(error), type: "error", }
 
         // ------------------------- Insert user data -------------------------
         if (data["user"]) {
@@ -90,7 +92,7 @@ async function register(prevState: any, formData: FormData): Promise<any> {
                 password: password,
             })
             // Check error login
-            if (loginError) return { title: "เกิดข้อผิดพลาด", message: loginError.message, type: "error", }
+            if (loginError) return { title: "เกิดข้อผิดพลาด", message: await translateServerSupabaseErrorToThai(loginError), type: "error", }
 
             // Insert user data
             const { error: userError } = await supabase
@@ -104,7 +106,7 @@ async function register(prevState: any, formData: FormData): Promise<any> {
                 }])
 
             // Check error insert user data
-            if (userError) return { title: "เกิดข้อผิดพลาด", message: userError.message, type: "error", }
+            if (userError) return { title: "เกิดข้อผิดพลาด", message: await translateServerSupabaseErrorToThai(userError), type: "error", }
         }
 
         return { title: "สำเร็จ", message: "เข้าสู่ระบบสำเร็จ", type: "success", }
@@ -114,13 +116,64 @@ async function register(prevState: any, formData: FormData): Promise<any> {
     }
 }
 
+// Google Login
+async function googleLogin() {
+    try {
+        const supabase = await createSupabaseServerClient()
+        
+        // ตรวจสอบว่าเราใช้ URL ที่ถูกต้อง
+        const baseUrl = process.env.SUPABASE_URL || 'http://localhost:3000';
+        const { data, error } = await supabase.auth.signInWithOAuth({
+            provider: "google",
+            options: {
+                // redirectTo: `${baseUrl}/auth/callback`,
+                redirectTo: `http://localhost:3000/auth/callback`,
+                scopes: 'email profile',
+            },
+        })
+
+        // Check error login
+        if (error) {
+            console.error('Google login error:', error);
+            return { 
+                title: "เกิดข้อผิดพลาด", 
+                message: translateServerSupabaseErrorToThai(error), 
+                type: "error", 
+            }
+        }
+
+        // Check data
+        if (data && data.url) {
+            return { 
+                title: "สำเร็จ", 
+                message: "กำลังนำทางไปยัง Google...", 
+                type: "success",
+                url: data.url
+            }
+        }
+
+        return { 
+            title: "ไม่สามารถเข้าสู่ระบบได้", 
+            message: "ไม่ได้รับ URL สำหรับการเข้าสู่ระบบ", 
+            type: "error", 
+        }
+    } catch (error: any) {
+        console.log(`เกิดข้อผิดพลาดทางฝั่งเซิร์ฟเวอร์: ${error.message}`)
+        return { 
+            title: "เกิดข้อผิดพลาดทางฝั่งเซิร์ฟเวอร์", 
+            message: "กรุณาลองใหม่ภายหลัง", 
+            type: "error", 
+        }
+    }
+}
+
 // Logout
 async function logout() {
     const supabase = await createSupabaseServerClient()
     const { error } = await supabase.auth.signOut()
     if (error) {
         console.log(error)
-        return { title: "เกิดข้อผิดพลาด", message: error.message, type: "error", }
+        return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(error), type: "error", }
     }
     return { title: "สำเร็จ", message: "ออกจากระบบเรียบร้อยแล้ว", type: "success", }
 }
@@ -128,5 +181,6 @@ async function logout() {
 export {
     register,
     login,
+    googleLogin,
     logout,
 }

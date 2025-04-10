@@ -5,8 +5,8 @@ import { cookies } from 'next/headers'
 export async function createSupabaseServerClient() {
     const cookieStore = await cookies()
 
-    const supabaseUrl: string = process.env.SUPABASE_URL || ''
-    const supabaseKey: string = process.env.SUPABASE_ANON_KEY || ''
+    const supabaseUrl = process.env.SUPABASE_URL || ''
+    const supabaseKey = process.env.SUPABASE_ANON_KEY || ''
 
     // Check if SUPABASE_URL and SUPABASE_ANON_KEY is set
     if (!supabaseUrl || !supabaseKey) {
@@ -14,21 +14,27 @@ export async function createSupabaseServerClient() {
     }
 
     return createServerClient(
-        process.env.SUPABASE_URL!,
-        process.env.SUPABASE_ANON_KEY!,
+        supabaseUrl,
+        supabaseKey,
         {
             cookies: {
-                getAll() {
-                    return cookieStore.getAll()
+                get(name) {
+                    return cookieStore.get(name)?.value
                 },
-                setAll(cookiesToSet) {
+                set(name, value, options) {
                     try {
-                        cookiesToSet.forEach(({ name, value, options }) =>
-                            cookieStore.set(name, value, options)
-                        )
-                    } catch {
+                        cookieStore.set(name, value, options)
+                    } catch (error) {
+                        console.error(`Error setting cookie ${name}:`, error)
                     }
                 },
+                remove(name, options) {
+                    try {
+                        cookieStore.set(name, '', { ...options, maxAge: 0 })
+                    } catch (error) {
+                        console.error(`Error removing cookie ${name}:`, error)
+                    }
+                }
             },
         }
     )
