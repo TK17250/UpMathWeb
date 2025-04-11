@@ -1,8 +1,19 @@
 import React, { useEffect, useState } from 'react';
+import { getUserData } from '../action/getuser';
 
 const Sidebar = () => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [userData, setUserData] = useState<any>(null);
     const activePage = window.location.pathname;
+
+    // Get user data
+    useEffect(() => {
+        getUserData().then((data) => {
+            if (data) {
+                setUserData(data);
+            }
+        })
+    }, [])
 
     // Thai month names
     const thaiMonths = [
@@ -66,7 +77,7 @@ const Sidebar = () => {
     ];
 
     return (
-        <div className="">
+        <div className="h-full">
             {/* Hamburger button for mobile */}
             <button
                 className="lg:hidden fixed top-4 right-4 z-50 p-2 rounded-md bg-[#203D4F] border-4 border-[#002D4A] text-white outline-none"
@@ -146,7 +157,13 @@ const Sidebar = () => {
             </div>
 
             {/* Sidebar desktop */}
-            <div className="hidden lg:flex lg:flex-col lg:w-64 mt-5">
+            <div className="hidden lg:flex lg:flex-col h-full justify-between lg:w-64 mt-5 overflow-y-scroll">
+                {/* Titile */}
+                <div className="mx-3 p-4 bg-[#203D4F] rounded-xl hidden xl:block mb-5">
+                    <h2 className="text-white font-bold text-lg">สวัสดีคุณ</h2>
+                    <p className="text-gray-400">{userData?.t_fullname}</p>
+                </div>
+
                 {/* Menu items */}
                 <nav className="mx-3 p-4 bg-[#203D4F] rounded-xl">
                     {menuItems.map((item) => (
@@ -174,7 +191,7 @@ const Sidebar = () => {
                 </nav>
 
                 {/* Calendar */}
-                <div className="mx-3 p-4 bg-[#203D4F] rounded-xl mt-5">
+                <div className="mx-3 p-4 bg-[#203D4F] rounded-xl mb-5 mt-5">
                     <h3 className="text-white font-medium mb-2">ปฏิทิน</h3>
 
                     {/* Month and Year in Thai */}
