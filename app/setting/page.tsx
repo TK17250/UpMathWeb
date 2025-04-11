@@ -1,17 +1,26 @@
 'use client';
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { getUser } from "@/app/action/getuser";
+import { getUser, getUserData } from "@/app/action/getuser";
 import { logout } from "@/app/auth/auth";
 import Navbar from "@/app/component/navbar";
 import Sidebar from "@/app/component/sidebar";
 import Footer from "@/app/component/footer";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEye, faEyeSlash } from "@fortawesome/free-solid-svg-icons"
+import ConfirmationModal from "../component/modal1";
 
 export default function Setting() {
     const [user, setUser] = useState<any>(null);
     const [showPassword, setShowPassword] = useState(false);
+    const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+    // Data
+    const [fullname, setFullname] = useState<string>("");
+    const [username, setUsername] = useState<string>("");
+    const [email, setEmail] = useState<string>("");
+    const [gender, setGender] = useState<string>("");
+    const [age, setAge] = useState<number>(0);
 
     // Check login
     const router = useRouter();
@@ -30,7 +39,25 @@ export default function Setting() {
                 setUser(res);
             }
         })
+
+        // Set user data
+        getUserData().then((res: any) => {
+            setFullname(res?.t_fullname);
+            setUsername(res?.t_username);
+            setEmail(res?.t_email);
+            setGender(res?.t_gender);
+            setAge(res?.t_age);
+        })
     }, [])
+
+    // Handle for logout
+    const handleLogout = async () => {
+        logout().then((res: any) => {
+            if (res) {
+                router.push("/login");
+            }
+        });
+    };
 
     return (
         <div className="h-screen flex flex-col overflow-hidden">
@@ -60,6 +87,7 @@ export default function Setting() {
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                                         {/* Full name */}
                                         <div>
+                                            <label htmlFor="fullname" className="text-white font-bold text-sm/6">ชื่อ-นามสกุล</label>
                                             <input
                                                 id="fullname"
                                                 name="fullname"
@@ -68,11 +96,14 @@ export default function Setting() {
                                                 autoComplete="off"
                                                 placeholder="ชื่อ-นามสกุล"
                                                 className="block w-full rounded-md bg-[#203D4F] px-3 py-1.5 text-white border-2 outline-none border-[#002D4A] sm:text-sm/6 transition-all duration-300 placeholder:text-[#CCCCCC]"
+                                                value={fullname}
+                                                onChange={(e) => setFullname(e.target.value)}
                                             />
                                         </div>
 
                                         {/* Name */}
                                         <div>
+                                            <label htmlFor="name" className="text-white font-bold text-sm/6">ชื่อเล่น</label>
                                             <input
                                                 id="name"
                                                 name="name"
@@ -81,11 +112,14 @@ export default function Setting() {
                                                 autoComplete="off"
                                                 placeholder="ชื่อเล่น"
                                                 className="block w-full rounded-md bg-[#203D4F] px-3 py-1.5 text-white border-2 outline-none border-[#002D4A] sm:text-sm/6 transition-all duration-300 placeholder:text-[#CCCCCC]"
+                                                value={username}
+                                                onChange={(e) => setUsername(e.target.value)}
                                             />
                                         </div>
 
                                         {/* Email */}
                                         <div>
+                                            <label htmlFor="email" className="text-white font-bold text-sm/6">อีเมล</label>
                                             <input
                                                 id="email"
                                                 name="email"
@@ -94,6 +128,8 @@ export default function Setting() {
                                                 autoComplete="off"
                                                 placeholder="อีเมล"
                                                 className="block w-full rounded-md bg-[#203D4F] px-3 py-1.5 text-white border-2 outline-none border-[#002D4A] sm:text-sm/6 transition-all duration-300 placeholder:text-[#CCCCCC]"
+                                                value={email}
+                                                onChange={(e) => setEmail(e.target.value)}
                                             />
                                         </div>
 
@@ -101,14 +137,16 @@ export default function Setting() {
                                         <div className="grid grid-cols-2 gap-2">
                                             {/* Gender */}
                                             <div>
+                                                <label htmlFor="gender" className="text-white font-bold text-sm/6">เพศ</label>
                                                 <select
                                                     name="gender"
                                                     id="gender"
                                                     className="block w-full rounded-md bg-[#203D4F] px-3 py-1.5 text-white border-2 outline-none border-[#002D4A] sm:text-sm/6 transition-all duration-300 placeholder:text-[#CCCCCC]"
                                                     required
-                                                    defaultValue=""
+                                                    defaultValue={gender}
+                                                    onChange={(e) => setGender(e.target.value)}
                                                 >
-                                                    <option value="" disabled hidden>เพศ</option>
+                                                    <option value={gender} disabled hidden>{gender}</option>
                                                     <option value="male">ชาย</option>
                                                     <option value="female">หญิง</option>
                                                     <option value="lgbtqia">LGBTQIA+</option>
@@ -118,6 +156,7 @@ export default function Setting() {
 
                                             {/* Age */}
                                             <div>
+                                                <label htmlFor="age" className="text-white font-bold text-sm/6">อายุ</label>
                                                 <input
                                                     id="age"
                                                     name="age"
@@ -126,6 +165,9 @@ export default function Setting() {
                                                     autoComplete="off"
                                                     placeholder="อายุ"
                                                     className="block w-full rounded-md bg-[#203D4F] px-3 py-1.5 text-white border-2 outline-none border-[#002D4A] sm:text-sm/6 transition-all duration-300 placeholder:text-[#CCCCCC]"
+                                                    value={age.toString()}
+                                                    min={1}
+                                                    onChange={(e) => setAge(parseInt(e.target.value))}
                                                 />
                                             </div>
                                         </div>
@@ -165,10 +207,10 @@ export default function Setting() {
                                                 autoComplete="off"
                                                 className="block w-full rounded-md bg-[#203D4F] px-3 py-1.5 text-white border-2 outline-none border-[#002D4A] sm:text-sm/6 transition-all duration-300 placeholder:text-[#CCCCCC]"
                                             />
-                                            <FontAwesomeIcon 
-                                                icon={showPassword ? faEye : faEyeSlash} 
-                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-white cursor-pointer" 
-                                                onClick={() => setShowPassword(!showPassword)} 
+                                            <FontAwesomeIcon
+                                                icon={showPassword ? faEye : faEyeSlash}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-white cursor-pointer"
+                                                onClick={() => setShowPassword(!showPassword)}
                                             />
                                         </div>
 
@@ -183,10 +225,10 @@ export default function Setting() {
                                                 autoComplete="off"
                                                 className="block w-full rounded-md bg-[#203D4F] px-3 py-1.5 text-white border-2 outline-none border-[#002D4A] sm:text-sm/6 transition-all duration-300 placeholder:text-[#CCCCCC]"
                                             />
-                                            <FontAwesomeIcon 
-                                                icon={showPassword ? faEye : faEyeSlash} 
-                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-white cursor-pointer" 
-                                                onClick={() => setShowPassword(!showPassword)} 
+                                            <FontAwesomeIcon
+                                                icon={showPassword ? faEye : faEyeSlash}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-white cursor-pointer"
+                                                onClick={() => setShowPassword(!showPassword)}
                                             />
                                         </div>
 
@@ -201,10 +243,10 @@ export default function Setting() {
                                                 autoComplete="off"
                                                 className="block w-full rounded-md bg-[#203D4F] px-3 py-1.5 text-white border-2 outline-none border-[#002D4A] sm:text-sm/6 transition-all duration-300 placeholder:text-[#CCCCCC]"
                                             />
-                                            <FontAwesomeIcon 
-                                                icon={showPassword ? faEye : faEyeSlash} 
-                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-white cursor-pointer" 
-                                                onClick={() => setShowPassword(!showPassword)} 
+                                            <FontAwesomeIcon
+                                                icon={showPassword ? faEye : faEyeSlash}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-white cursor-pointer"
+                                                onClick={() => setShowPassword(!showPassword)}
                                             />
                                         </div>
                                     </div>
@@ -230,15 +272,11 @@ export default function Setting() {
                                 </button>
 
                                 {/* Logout */}
-                                <button 
+                                <button
                                     className="bg-[#EF4444] hover:bg-red-500 transition-all duration-300 text-white px-4 md:px-6 py-2 rounded-md cursor-pointer text-sm"
                                     onClick={(e) => {
                                         e.preventDefault();
-                                        logout().then((res: any) => {
-                                            if (res) {
-                                                router.push("/login")
-                                            }
-                                        })
+                                        setShowLogoutModal(true);
                                     }}>
                                     ออกจากระบบ
                                 </button>
@@ -248,6 +286,19 @@ export default function Setting() {
 
                     {/* Footer */}
                     <Footer />
+
+                    {/* Logout Confirmation Modal */}
+                    {showLogoutModal && (
+                        <ConfirmationModal 
+                            open={showLogoutModal}
+                            setOpen={setShowLogoutModal}
+                            onConfirm={handleLogout}
+                            title="ยืนยันการออกจากระบบ"
+                            message="คุณต้องการออกจากระบบใช่หรือไม่? คุณจะต้องเข้าสู่ระบบใหม่เพื่อเข้าถึงบัญชีของคุณอีกครั้ง"
+                            confirmButtonText="ออกจากระบบ"
+                            cancelButtonText="ยกเลิก"
+                        />
+                    )}
                 </div>
             )}
         </div>
