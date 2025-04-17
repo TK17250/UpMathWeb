@@ -9,7 +9,7 @@ import Footer from "@/app/component/footer";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEye, faEyeSlash } from "@fortawesome/free-solid-svg-icons"
 import ConfirmationModal from "../component/modal1";
-import { updatePassword, updateSetting } from "../action/setting";
+import { deleteAccount, updatePassword, updateSetting } from "../action/setting";
 import Alert1, { AlertType } from "../component/alert1"
 import ConfirmationModal2 from "../component/modal2";
 
@@ -23,6 +23,7 @@ export default function Setting() {
     const [user, setUser] = useState<any>(null);
     const [showPassword, setShowPassword] = useState(false);
     const [showLogoutModal, setShowLogoutModal] = useState(false);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [showSaveModal, setShowSaveModal] = useState(false);
     const [showSaveNewPasswordModal, setShowSaveNewPasswordModal] = useState(false);
     const [action, formData] = useActionState(updateSetting, Alert);
@@ -79,6 +80,15 @@ export default function Setting() {
     // Handle for logout
     const handleLogout = async () => {
         logout().then((res: any) => {
+            if (res) {
+                router.push("/login");
+            }
+        });
+    };
+
+    // Handle for delete account
+    const handleDeleteAccount = async () => {
+        deleteAccount().then((res: any) => {
             if (res) {
                 router.push("/login");
             }
@@ -321,7 +331,11 @@ export default function Setting() {
                             <div className="flex flex-wrap gap-3">
                                 {/* Delete account */}
                                 <button
-                                    className="bg-[#203D4F] border-2 border-[#EF4444] hover:border-red-500 transition-all duration-300 text-white px-4 md:px-6 py-2 rounded-md cursor-pointer text-sm">
+                                    className="bg-[#203D4F] border-2 border-[#EF4444] hover:border-red-500 transition-all duration-300 text-white px-4 md:px-6 py-2 rounded-md cursor-pointer text-sm"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        setShowDeleteModal(true);
+                                    }}>
                                     ลบบัญชี
                                 </button>
 
@@ -374,6 +388,18 @@ export default function Setting() {
                             title="ยืนยันการบันทึกรหัสผ่านใหม่"
                             message="คุณต้องการบันทึกรหัสผ่านใหม่ใช่หรือไม่?"
                             confirmButtonText="บันทึก"
+                            cancelButtonText="ยกเลิก"
+                        />
+                    )}
+
+                    {showDeleteModal && (
+                        <ConfirmationModal 
+                            open={showDeleteModal}
+                            setOpen={setShowDeleteModal}
+                            onConfirm={handleDeleteAccount}
+                            title="ยืนยันการลบบัญชี"
+                            message="คุณต้องการลบบัญชีของคุณใช่หรือไม่? ข้อมูลทั้งหมดจะถูกลบและไม่สามารถกู้คืนได้"
+                            confirmButtonText="ลบบัญชี"
                             cancelButtonText="ยกเลิก"
                         />
                     )}

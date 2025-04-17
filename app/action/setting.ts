@@ -1,6 +1,7 @@
 'use server'
 import { createSupabaseServerClient } from "@/server/server"
 import { getUser } from "./getuser"
+import { createClient } from "@/server/client"
 
 // Update user data
 async function updateSetting(prevState: any, formData: FormData) {
@@ -93,7 +94,109 @@ async function updatePassword(prevState: any, formData: FormData) {
     }
 }
 
+// Delete account
+async function deleteAccount() {
+    try {
+        // ดึงข้อมูลผู้ใช้ปัจจุบัน
+        const user = await getUser();
+        
+        // ตรวจสอบว่ามีข้อมูลผู้ใช้หรือไม่
+        if (!user || !user.email || !user.id) {
+            return { 
+                title: "เกิดข้อผิดพลาด", 
+                message: "ไม่พบข้อมูลผู้ใช้", 
+                type: "error" 
+            };
+        }
+
+        const email = user.email;
+        const userId = user.id;
+
+        // สร้าง Supabase client สำหรับการดำเนินการปกติ
+        const supabase = await createSupabaseServerClient();
+        
+        // ลบข้อมูลผู้ใช้จากตาราง teachers
+        const { error: deleteError } = await supabase
+            .from('teachers')
+            .delete()
+            .eq('t_email', email);
+            
+        // ตรวจสอบข้อผิดพลาดในการลบข้อมูล
+        if (deleteError) {
+            console.error("Error deleting user data:", deleteError);
+            return { 
+                title: "เกิดข้อผิดพลาด", 
+                message: "ไม่สามารถลบข้อมูลผู้ใช้ได้: " + deleteError.message, 
+                type: "error" 
+            };
+        }
+
+        // สร้าง Supabase admin client เพื่อลบบัญชี
+        const supabaseAdmin = createClient();
+        
+        // ตรวจสอบว่าสร้าง admin client สำเร็จหรือไม่
+        if (!supabaseAdmin) {
+            console.error("Failed to create admin client");
+            return {
+                title: "คำเตือน",
+                message: "ลบข้อมูลผู้ใช้สำเร็จ แต่ไม่สามารถสร้าง admin client เพื่อลบบัญชีได้",
+                type: "warning"
+            };
+        }
+
+        // ลบผู้ใช้จาก Auth - ใช้ try/catch เพื่อจับข้อผิดพลาดโดยเฉพาะ
+        try {
+            const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(userId);
+        
+            if (deleteAuthError) {
+                console.error("Error deleting auth user:", deleteAuthError);
+                return { 
+                    title: "คำเตือน", 
+                    message: "ลบข้อมูลผู้ใช้สำเร็จ แต่ไม่สามารถลบบัญชีได้: " + deleteAuthError.message, 
+                    type: "warning" 
+                };
+            }
+        } catch (adminError: any) {
+            console.error("Exception in admin.deleteUser:", adminError);
+            return { 
+                title: "คำเตือน", 
+                message: "ลบข้อมูลผู้ใช้สำเร็จ แต่เกิดข้อผิดพลาดในการลบบัญชี: " + (adminError.message || "ไม่ทราบสาเหตุ"), 
+                type: "warning" 
+            };
+        }
+
+        // ออกจากระบบหลังจากลบข้อมูลสำเร็จ
+        const { error: signOutError } = await supabase.auth.signOut();
+        
+        // ตรวจสอบข้อผิดพลาดในการออกจากระบบ
+        if (signOutError) {
+            console.error("Error signing out:", signOutError);
+            return { 
+                title: "คำเตือน", 
+                message: "ลบบัญชีผู้ใช้สำเร็จ แต่ไม่สามารถออกจากระบบได้: " + signOutError.message, 
+                type: "warning" 
+            };
+        }
+
+        // คืนค่าสำเร็จ
+        return { 
+            title: "สำเร็จ", 
+            message: "ลบบัญชีของคุณเรียบร้อยแล้ว", 
+            type: "success" 
+        };
+    } catch (error: any) {
+        // จัดการกับข้อผิดพลาดทั่วไป
+        console.error('Error in deleteAccount function:', error);
+        return { 
+            title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์", 
+            message: error.message || "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ", 
+            type: "error" 
+        };
+    }
+}
+
 export {
     updateSetting,
     updatePassword,
+    deleteAccount,
 }

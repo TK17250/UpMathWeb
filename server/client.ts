@@ -1,16 +1,23 @@
-import { createBrowserClient } from '@supabase/ssr'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
-export function createClient() {
-    const supabaseUrl: string = process.env.SUPABASE_URL || ''
-    const supabaseKey: string = process.env.SUPABASE_ANON_KEY || ''
-
-    // Check if SUPABASE_URL and SUPABASE_ANON_KEY is set
-    if (!supabaseUrl || !supabaseKey) {
-        throw new Error('Missing SUPABASE_URL or SUPABASE_ANON_KEY')
+export const createClient = () => {
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('Missing environment variables for Supabase Admin client');
+      return null;
     }
     
-    return createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
+    return createSupabaseClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
+  } catch (error) {
+    console.error('Error creating Supabase Admin client:', error);
+    return null;
+  }
 }
