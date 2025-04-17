@@ -1,6 +1,6 @@
 'use client';
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { getUser, getUserData } from "@/app/action/getuser";
 import { logout } from "@/app/auth/auth";
 import Navbar from "@/app/component/navbar";
@@ -9,11 +9,26 @@ import Footer from "@/app/component/footer";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEye, faEyeSlash } from "@fortawesome/free-solid-svg-icons"
 import ConfirmationModal from "../component/modal1";
+import { updatePassword, updateSetting } from "../action/setting";
+import Alert1, { AlertType } from "../component/alert1"
+import ConfirmationModal2 from "../component/modal2";
+
+const Alert = {
+    title: "",
+    message: "",
+    type: "",
+}
 
 export default function Setting() {
     const [user, setUser] = useState<any>(null);
     const [showPassword, setShowPassword] = useState(false);
     const [showLogoutModal, setShowLogoutModal] = useState(false);
+    const [showSaveModal, setShowSaveModal] = useState(false);
+    const [showSaveNewPasswordModal, setShowSaveNewPasswordModal] = useState(false);
+    const [action, formData] = useActionState(updateSetting, Alert);
+    const [actionPassword, formPasswordData] = useActionState(updatePassword, Alert);
+    const formRef = useRef<HTMLFormElement>(null);
+    const formPasswordRef = useRef<HTMLFormElement>(null);
 
     // Data
     const [fullname, setFullname] = useState<string>("");
@@ -50,6 +65,17 @@ export default function Setting() {
         })
     }, [])
 
+    // Show alert when action is completed
+    useEffect(() => {
+        if (action && action.title && action.message && action.type && window.showAlert) {
+            window.showAlert(action.title, action.message, action.type as AlertType);
+        }
+
+        if (actionPassword && actionPassword.title && actionPassword.message && actionPassword.type && window.showAlert) {
+            window.showAlert(actionPassword.title, actionPassword.message, actionPassword.type as AlertType);
+        }
+    }, [action, actionPassword]);
+
     // Handle for logout
     const handleLogout = async () => {
         logout().then((res: any) => {
@@ -59,12 +85,31 @@ export default function Setting() {
         });
     };
 
+    // Handle for save form
+    const handleSaveForm = () => {
+        if (formRef.current) {
+            formRef.current.requestSubmit();
+        }
+        setShowSaveModal(false);
+    };
+
+    // Handle for save new password
+    const handleSaveNewPasswordForm = () => {
+        if (formPasswordRef.current) {
+            formPasswordRef.current.requestSubmit();
+        }
+        setShowSaveNewPasswordModal(false);
+    }
+    
     return (
         <div className="h-screen flex flex-col overflow-hidden">
             {user && (
                 <div className="flex flex-col h-full w-11/12 mx-auto">
                     {/* Navbar */}
                     <Navbar />
+
+                    {/* Alert */}
+                    <Alert1 />
 
                     <div className="flex flex-grow flex-col lg:flex-row overflow-hidden">
                         {/* Sidebar */}
@@ -83,7 +128,7 @@ export default function Setting() {
                                 <hr className="border-[#CCCCCC] mt-2 md:mt-3" />
 
                                 {/* Form */}
-                                <form className="mt-4 md:mt-5 space-y-4 md:space-y-6">
+                                <form ref={formRef} action={formData} className="mt-4 md:mt-5 space-y-4 md:space-y-6">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                                         {/* Full name */}
                                         <div>
@@ -127,9 +172,10 @@ export default function Setting() {
                                                 required
                                                 autoComplete="off"
                                                 placeholder="อีเมล"
-                                                className="block w-full rounded-md bg-[#203D4F] px-3 py-1.5 text-white border-2 outline-none border-[#002D4A] sm:text-sm/6 transition-all duration-300 placeholder:text-[#CCCCCC]"
+                                                className="block w-full rounded-md bg-[#002c4a5b] px-3 py-1.5 text-[#9f9f9f] border-2 outline-none border-[#002c4a5b] sm:text-sm/6 transition-all duration-300 placeholder:text-[#CCCCCC]"
                                                 value={email}
                                                 onChange={(e) => setEmail(e.target.value)}
+                                                disabled
                                             />
                                         </div>
 
@@ -146,7 +192,7 @@ export default function Setting() {
                                                     defaultValue={gender}
                                                     onChange={(e) => setGender(e.target.value)}
                                                 >
-                                                    <option value={gender} disabled hidden>{gender}</option>
+                                                    <option value={gender} hidden>{gender}</option>
                                                     <option value="male">ชาย</option>
                                                     <option value="female">หญิง</option>
                                                     <option value="lgbtqia">LGBTQIA+</option>
@@ -178,6 +224,10 @@ export default function Setting() {
                                         <button
                                             type="submit"
                                             className="rounded-md bg-[#203D4F] px-6 md:px-10 py-1.5 text-sm/6 text-[#80ED99] font-bold shadow-xs cursor-pointer border-[#002D4A] border-2 hover:border-[#80ED99] transition-all duration-300"
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                setShowSaveModal(true);
+                                            }}
                                         >
                                             บันทึก
                                         </button>
@@ -194,7 +244,7 @@ export default function Setting() {
                                 <hr className="border-[#CCCCCC] mt-2 md:mt-3" />
 
                                 {/* Form */}
-                                <form className="mt-4 md:mt-5 space-y-4 md:space-y-6">
+                                <form action={formPasswordData} ref={formPasswordRef} className="mt-4 md:mt-5 space-y-4 md:space-y-6">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                                         {/* Old Password */}
                                         <div className="relative">
@@ -256,6 +306,10 @@ export default function Setting() {
                                         <button
                                             type="submit"
                                             className="rounded-md bg-[#203D4F] px-6 md:px-10 py-1.5 text-sm/6 text-white font-bold shadow-xs cursor-pointer border-[#002D4A] border-2 hover:bg-[#002D4A] hover:text-[#80ED99] transition-all duration-300"
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                setShowSaveNewPasswordModal(true);
+                                            }}
                                         >
                                             บันทึกรหัสผ่านใหม่
                                         </button>
@@ -287,7 +341,7 @@ export default function Setting() {
                     {/* Footer */}
                     <Footer />
 
-                    {/* Logout Confirmation Modal */}
+                    {/* Show Modal */}
                     {showLogoutModal && (
                         <ConfirmationModal 
                             open={showLogoutModal}
@@ -296,6 +350,30 @@ export default function Setting() {
                             title="ยืนยันการออกจากระบบ"
                             message="คุณต้องการออกจากระบบใช่หรือไม่? คุณจะต้องเข้าสู่ระบบใหม่เพื่อเข้าถึงบัญชีของคุณอีกครั้ง"
                             confirmButtonText="ออกจากระบบ"
+                            cancelButtonText="ยกเลิก"
+                        />
+                    )}
+
+                    {showSaveModal && (
+                        <ConfirmationModal2 
+                            open={showSaveModal}
+                            setOpen={setShowSaveModal}
+                            onConfirm={handleSaveForm}
+                            title="ยืนยันการบันทึกข้อมูล"
+                            message="คุณต้องการบันทึกข้อมูลที่แก้ไขใช่หรือไม่?"
+                            confirmButtonText="บันทึก"
+                            cancelButtonText="ยกเลิก"
+                        />
+                    )}
+
+                    {showSaveNewPasswordModal && (
+                        <ConfirmationModal2 
+                            open={showSaveNewPasswordModal}
+                            setOpen={setShowSaveNewPasswordModal}
+                            onConfirm={handleSaveNewPasswordForm}
+                            title="ยืนยันการบันทึกรหัสผ่านใหม่"
+                            message="คุณต้องการบันทึกรหัสผ่านใหม่ใช่หรือไม่?"
+                            confirmButtonText="บันทึก"
                             cancelButtonText="ยกเลิก"
                         />
                     )}
