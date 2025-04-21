@@ -1,6 +1,6 @@
 'use client';
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useState, useRef } from "react";
 import { getUser } from "@/app/action/getuser";
 import Navbar from "@/app/component/navbar";
 import Sidebar from "@/app/component/sidebar";
@@ -8,6 +8,7 @@ import Footer from "@/app/component/footer";
 import Alert1, { AlertType } from "../component/alert1"
 import CreateClassModal from "./form_modal";
 import { createClass, getClassDataAndBanner } from "../action/class";
+import { createSwapy } from 'swapy'
 
 const Alert = {
     title: "",
@@ -19,7 +20,12 @@ export default function Class() {
     const [user, setUser] = useState<any>(null);
     const [classData, setClassData] = useState<any>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [dragEnabled, setDragEnabled] = useState(false);
     const [action, formAction] = useActionState(createClass, Alert);
+
+    // Swapy
+    const swapy = useRef(null) as any;
+    const container = useRef(null)
 
     // Check login
     const router = useRouter();
@@ -57,7 +63,26 @@ export default function Class() {
 
         }
     }, [action]);
+
+    // Initialize Swapy
+    useEffect(() => {
+        try {
+            if (container.current) {
+                swapy.current = createSwapy(container.current)
     
+                swapy.current.onSwap(({ data, fromPosition, toPosition }: any) => {
+                    if (data && toPosition !== undefined) {
+                        const positions = JSON.parse(localStorage.getItem('classPositions') || '{}');
+                        positions[data] = toPosition;
+                        localStorage.setItem('classPositions', JSON.stringify(positions));
+                    }
+                });
+            }
+        } catch (error) {
+            console.error('Swapy initialization error:', error);
+        }
+    }, [classData]);
+
     return (
         <div className="h-screen flex flex-col overflow-hidden">
             {user && (
@@ -85,32 +110,33 @@ export default function Class() {
 
                             {/* Class list */}
                             {classData && classData.length > 0 ? (
-                                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mt-5">
-                                    {classData.map((item: any) => (
-                                        <div 
-                                            key={item.c_id} 
-                                            style={{ 
-                                            backgroundImage: `url(${item.c_banner})`, 
-                                            backgroundSize: 'cover', 
-                                            backgroundPosition: 'center' 
-                                            }}
-                                            className="relative rounded-2xl p-4 transition-all duration-300 overflow-hidden border-4 border-[#203D4F] cursor-pointer hover:border-[#80ED99] hover:text-[#80ED99] text-white"
+                                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mt-5 relative" ref={container}>
+                                    {classData.map((item: any, index: number) => (
+                                        <div
+                                            key={index}
+                                            data-swapy-slot={index}
+                                            className="relative"
                                         >
-                                            {/* Dark overlay */}
-                                            <div className="absolute inset-0 bg-[#203D4F]/80"></div>
-                                            
-                                            {/* Content - positioned above the overlay */}
-                                            <div className="relative z-10 flex flex-col h-full">
-                                            <div className="flex items-center justify-between mb-10">
-                                                <h2 className="text-2xl font-bold transition-all duration-300">{item.c_name}</h2>
-                                            </div>
-                                            
-                                            <div className="mt-auto">
-                                                <div className="flex items-center space-x-2">
-                                                <span className="text-white/80 text-sm"> จำนวนผู้เรียนทั้งหมด {item.c_students ? Object.keys(item.c_students).length : 0} คน
-                                                </span>
+                                            <div
+                                                data-swapy-item={index}
+                                                style={{ 
+                                                    backgroundImage: `url(${item.c_banner})`, 
+                                                    backgroundSize: 'cover', 
+                                                    backgroundPosition: 'center' 
+                                                }}
+                                                className="relative rounded-2xl p-4 transition-colors duration-300 overflow-hidden border-4 border-[#203D4F] cursor-pointer hover:border-[#80ED99] hover:text-[#80ED99] text-white"
+                                            >
+                                                <div className="absolute inset-0 bg-[#203D4F]/80"></div>
+                                                <div className="relative z-10 flex flex-col h-full">
+                                                    <div className="flex items-center justify-between mb-10">
+                                                        <h2 className="text-2xl font-bold transition-all duration-300">{item.c_name}</h2>
+                                                    </div>
+                                                    <div className="mt-auto">
+                                                        <div className="flex items-center space-x-2">
+                                                            <span className="text-white/80 text-sm">จำนวนผู้เรียนทั้งหมด {item.c_students ? Object.keys(item.c_students).length : 0} คน</span>
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                            </div>
                                             </div>
                                         </div>
                                     ))}
