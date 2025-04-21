@@ -45,6 +45,13 @@ export default function CreateClassModal({ isOpen, onClose, formAction }: Create
         }
     }, [isOpen]);
 
+    // If close modal, reset the form
+    useEffect(() => {
+        if (!isOpen) {
+            resetForm();
+        }
+    }, [isOpen]);
+
     // Handle file selection
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {

@@ -53,10 +53,8 @@ export default function Class() {
     useEffect(() => {
         if (action && action.title && action.message && action.type && window.showAlert) {
             window.showAlert(action.title, action.message, action.type as AlertType);
-        }
-
-        if (action?.type === 'success') {
             setIsModalOpen(false);
+
         }
     }, [action]);
     
