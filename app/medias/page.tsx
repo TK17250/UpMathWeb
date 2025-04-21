@@ -6,9 +6,9 @@ import Navbar from "@/app/component/navbar";
 import Sidebar from "@/app/component/sidebar";
 import Footer from "@/app/component/footer";
 import Alert1, { AlertType } from "../component/alert1"
-import CreateClassModal from "./form_modal";
-import { createClass, getClassDataAndBanner } from "../action/class";
+import CreateMediaModal from "./form_modal";
 import { createSwapy } from 'swapy'
+import { createMedia, getMedia } from "../action/media";
 
 const Alert = {
     title: "",
@@ -16,11 +16,11 @@ const Alert = {
     type: "",
 }
 
-export default function Class() {
+export default function Medias() {
     const [user, setUser] = useState<any>(null);
-    const [classData, setClassData] = useState<any>(null);
+    const [mediaData, setMediaData] = useState<any>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [action, formAction] = useActionState(createClass, Alert);
+    const [action, formAction] = useActionState(createMedia, Alert);
 
     // Swapy
     const swapy = useRef(null) as any;
@@ -45,14 +45,14 @@ export default function Class() {
         })
     }, [])
 
-    // Get class data
+    // Get media data
     useEffect(() => {
-        getClassDataAndBanner().then((res: any) => {
+        getMedia().then((res: any) => {
             if (res) {
-                setClassData(res);
+                setMediaData(res);
             }
         })
-    }, [action]);
+    }, []);
 
     // Show alert when action is completed
     useEffect(() => {
@@ -71,16 +71,16 @@ export default function Class() {
     
                 swapy.current.onSwap(({ data, fromPosition, toPosition }: any) => {
                     if (data && toPosition !== undefined) {
-                        const positions = JSON.parse(localStorage.getItem('classPositions') || '{}');
+                        const positions = JSON.parse(localStorage.getItem('mediasPositions') || '{}');
                         positions[data] = toPosition;
-                        localStorage.setItem('classPositions', JSON.stringify(positions));
+                        localStorage.setItem('mediasPositions', JSON.stringify(positions));
                     }
                 });
             }
         } catch (error) {
             console.error('Swapy initialization error:', error);
         }
-    }, [classData]);
+    }, [mediaData]);
 
     return (
         <div className="h-screen flex flex-col overflow-hidden">
@@ -101,16 +101,16 @@ export default function Class() {
 
                         {/* Content */}
                         <div className="flex-grow lg:flex-grow-0 lg:w-4/5 bg-[#2D4A5B] mt-5 mb-5 lg:mb-0 lg:ml-4 rounded-xl border-4 border-[#203D4F] p-3 md:p-5 overflow-y-auto relative">
-                            {/* Add class */}
+                            {/* Add medias */}
                             <div className="w-full">
                                 <button className="text-white bg-[#203D4F] px-5 py-2 rounded-md cursor-pointer hover:bg-[#002D4A] transition-all duration-300 hover:text-[#80ED99] ml-auto block"
-                                onClick={() => setIsModalOpen(true)}>+ เพิ่มชั้นเรียน</button>
+                                onClick={() => setIsModalOpen(true)}>+ เพิ่มสื่อการเรียนรู้</button>
                             </div>
 
                             {/* Class list */}
-                            {classData && classData.length > 0 ? (
+                            {mediaData && mediaData.length > 0 ? (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mt-5 relative" ref={container}>
-                                    {classData.map((item: any, index: number) => (
+                                    {mediaData.map((item: any, index: number) => (
                                         <div
                                             key={index}
                                             data-swapy-slot={index}
@@ -128,11 +128,11 @@ export default function Class() {
                                                 <div className="absolute inset-0 bg-[#203D4F]/80"></div>
                                                 <div className="relative z-10 flex flex-col h-full">
                                                     <div className="flex items-center justify-between mb-10">
-                                                        <h2 className="text-2xl font-bold transition-all duration-300">{item.c_name}</h2>
+                                                        <h2 className="text-2xl font-bold transition-all duration-300">{item.m_name}</h2>
                                                     </div>
                                                     <div className="mt-auto">
                                                         <div className="flex items-center space-x-2">
-                                                            <span className="text-white/80 text-sm">จำนวนผู้เรียนทั้งหมด {item.c_students ? Object.keys(item.c_students).length : 0} คน</span>
+                                                            <p>ระยะเวลา: {item.m_period}</p>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -142,7 +142,7 @@ export default function Class() {
                                 </div>
                             ) : (
                                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                                    <p className="text-white text-lg">ยังไม่มีชั้นเรียน</p>
+                                    <p className="text-white text-lg">ยังไม่มีสื่อการเรียนรู้</p>
                                 </div>
                             )}
                         </div>
@@ -152,7 +152,7 @@ export default function Class() {
                     <Footer />
 
                     {/* Create Class Modal */}
-                    <CreateClassModal 
+                    <CreateMediaModal 
                         isOpen={isModalOpen}
                         onClose={() => setIsModalOpen(false)}
                         formAction={formAction}
