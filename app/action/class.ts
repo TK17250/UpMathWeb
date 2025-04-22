@@ -134,9 +134,27 @@ async function getClassDataAndBanner() {
     }
 }
 
+// Get class data by id
+async function getClassDataById(classId: number) {
+    try {
+        const supabase = await createSupabaseServerClient(); // Call the supabase
+        const { data: classData, error } = await supabase
+            .from("classs")
+            .select("*")
+            .eq("c_id", classId)
+            .single();
+        if (error) return { title: "เกิดข้อผิดพลาด", message: error.message, type: "error" }; // Check error
+        
+        return classData;
+    } catch (error: any) {
+        console.log("Error getting class data by id:", error.message);
+    }
+}
+
 export {
     createClass,
     getClassData,
     getClassBanner,
     getClassDataAndBanner,
+    getClassDataById,
 }

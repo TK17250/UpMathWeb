@@ -59,14 +59,22 @@ export default function Class() {
         if (action && action.title && action.message && action.type && window.showAlert) {
             window.showAlert(action.title, action.message, action.type as AlertType);
             setIsModalOpen(false);
-
         }
     }, [action]);
+
+    // Handle card click to navigate
+    const handleCardClick = (c_id: string) => {
+        router.push(`/classs/${c_id}`);
+    };
 
     // Initialize Swapy
     useEffect(() => {
         try {
-            if (container.current) {
+            if (container.current && classData) {
+                if (swapy.current) {
+                    swapy.current.destroy();
+                }
+                
                 swapy.current = createSwapy(container.current)
     
                 swapy.current.onSwap(({ data, fromPosition, toPosition }: any) => {
@@ -124,7 +132,27 @@ export default function Class() {
                                                     backgroundPosition: 'center' 
                                                 }}
                                                 className="relative rounded-2xl p-4 transition-colors duration-300 overflow-hidden border-4 border-[#203D4F] cursor-pointer hover:border-[#80ED99] hover:text-[#80ED99] text-white"
+                                                onClick={(e) => {
+                                                    if (!e.defaultPrevented) {
+                                                        handleCardClick(item.c_id);
+                                                    }
+                                                }}
                                             >
+                                                {/* ปุ่มสำหรับลาก */}
+                                                <button 
+                                                    data-drag-handle
+                                                    className="absolute top-2 right-2 bg-[#203D4F] p-2 rounded-md z-20 opacity-30 hover:opacity-100 transition-opacity duration-300 cursor-grab active:cursor-grabbing"
+                                                    title="ลากเพื่อจัดตำแหน่ง"
+                                                    onClick={(e) => {
+                                                        // Prevent navigation when clicking the drag handle
+                                                        e.stopPropagation();
+                                                    }}
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                                        <path d="M7 2a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zM7 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zM7 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm-3 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm-3 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/>
+                                                    </svg>
+                                                </button>
+
                                                 <div className="absolute inset-0 bg-[#203D4F]/80"></div>
                                                 <div className="relative z-10 flex flex-col h-full">
                                                     <div className="flex items-center justify-between mb-10">
