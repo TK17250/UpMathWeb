@@ -6,16 +6,17 @@ import Navbar from "@/app/component/navbar";
 import Sidebar from "@/app/component/sidebar";
 import Footer from "@/app/component/footer";
 import Alert1, { AlertType } from "../../component/alert1";
-import CreateClassModal from "./../form_modal";
-import { createClass, getClassBanner, getClassDataAndBanner, getClassDataById } from "../../action/class";
+import { deleteClass, getClassBanner, getClassDataById, updateClassData } from "../../action/class";
 import Link from "next/link";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faGear } from "@fortawesome/free-solid-svg-icons";
+import UpdateClassModal from "./form_modal";
+import ConfirmationModal from "@/app/component/modal1";
 
 // Define TypeScript interfaces
 interface AlertState {
     title: string;
-    message: string;
+    message: any;
     type: string;
 }
 
@@ -70,13 +71,14 @@ const Alert: AlertState = {
 export default function Class() {
     const [user, setUser] = useState<UserData | null>(null);
     const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
-    const reducer = (state: any, payload: AlertState) => ({ ...state, ...payload });
-    const [action, formAction] = useActionState<any, AlertState>(reducer, Alert);
+    const [action, formAction] = useActionState(updateClassData, Alert);
     const [classData, setClassData] = useState<ClassData | null>(null);
     const [bannerUrl, setBannerUrl] = useState<string>("");
     const [classId, setClassId] = useState<number>(0);
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<AlertState | null>(null);
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
 
     // Check login
     const router = useRouter();
@@ -146,14 +148,25 @@ export default function Class() {
         }
 
         fetchClassData();
-    }, [classId]);
+    }, [classId, action]);
 
     // Show alert when action is completed
     useEffect(() => {
         if (action && action.title && action.message && action.type && window.showAlert) {
             window.showAlert(action.title, action.message, action.type as AlertType);
+            setIsModalOpen(false);
+            router.push(`/classs/${classId}`);
         }
     }, [action]);
+
+    // Handle delete class
+    const handleDeleteClass = async () => {
+        deleteClass(classId).then((res: any) => {
+            if (res) {
+                router.push("/login");
+            }
+        });
+    };
 
     // Function to render class information
     const renderClassContent = () => {
@@ -196,18 +209,21 @@ export default function Class() {
             <div className="text-white">
                 {/* Class Banner */}
                 <div className="w-full h-40 md:h-60 lg:h-80 rounded-lg rounded-b-none overflow-hidden mb-6 relative">
+                    {/* Banner Image */}
                     {bannerUrl ? (
-                        <img 
-                            src={bannerUrl} 
-                            alt={classData.c_name} 
-                            className="w-full h-full object-cover"
-                        />
+                        <>
+                            <img 
+                                src={bannerUrl} 
+                                alt={classData.c_name} 
+                                className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-[#203D4F]/80"></div>
+                        </>
                     ) : (
                         <div className="w-full h-full bg-gray-600 flex items-center justify-center">
                             <p>ไม่พบรูปภาพแบนเนอร์</p>
                         </div>
                     )}
-                    <div className="absolute inset-0 bg-[#203D4F]/80"></div>
 
                     {/* Name */}
                     <div className="absolute bottom-0 left-0 right-0 p-4">
@@ -220,7 +236,30 @@ export default function Class() {
                     </div>
 
                     {/* Gear */}
-                    <FontAwesomeIcon icon={faGear} className="text-white rounded-md z-20 opacity-30 hover:opacity-100 transition-opacity duration-300 cursor-pointer m-4 absolute top-0 right-0" />
+                    <div className="absolute top-0 right-0 m-4 group">
+                        <FontAwesomeIcon
+                            icon={faGear}
+                            className="text-white rounded-md z-20 opacity-30 group-hover:opacity-100 transition-opacity duration-300 cursor-pointer"
+                            onClick={() => setIsMenuOpen(true)}
+                            onMouseEnter={() => setIsMenuOpen(true)}
+                        />
+                        {isMenuOpen && (
+                            <div className="absolute top-0 right-0 hidden group-hover:block bg-[#2D4A5B] p-2 rounded-lg shadow-md transition-all duration-300">
+                                <button 
+                                    className="block w-full text-left px-4 py-2 text-sm text-white hover:bg-white/10 transition-all duration-300 cursor-pointer rounded-lg"
+                                    onClick={() => { setIsModalOpen(true); }}
+                                >
+                                    แก้ไข
+                                </button>
+                                <button 
+                                    className="block w-full text-left px-4 py-2 text-sm text-white hover:bg-white/10 transition-all duration-300 cursor-pointer rounded-lg"
+                                    onClick={() => { setShowDeleteModal(true); }}
+                                >
+                                    ลบ
+                                </button>
+                            </div>
+                        )}
+                    </div>                    
                 </div>
 
                 {/* Class Information */}
@@ -348,6 +387,26 @@ export default function Class() {
 
                     {/* Footer */}
                     <Footer />
+
+                    {/* Update Class Modal */}
+                    <UpdateClassModal
+                        isOpen={isModalOpen}
+                        onClose={() => setIsModalOpen(false)}
+                        formAction={formAction}
+                    />
+
+                    {/* Delete Class */}
+                    {showDeleteModal && (
+                        <ConfirmationModal 
+                            open={showDeleteModal}
+                            setOpen={setShowDeleteModal}
+                            onConfirm={handleDeleteClass}
+                            title="ยืนยันการลบห้องเรียน"
+                            message="คุณต้องการลบห้องเรียนนี้หรือไม่?"
+                            confirmButtonText="ยืนยัน"
+                            cancelButtonText="ยกเลิก"
+                        />
+                    )}
                 </div>
             )}
         </div>
