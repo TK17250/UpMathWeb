@@ -1,6 +1,6 @@
 'use server'
 import { createSupabaseServerClient } from "@/server/server";
-import { getUserData } from "./getuser";
+import { getUser, getUserData } from "./getuser";
 import { translateServerSupabaseErrorToThai } from "@/server/error";
 
 // Function create new class
@@ -239,23 +239,34 @@ async function updateClassData(prevState: any, formData: FormData) {
 }
 
 // Delete class
-async function deleteClass(classId: number) {
+async function deleteClass(prevState: any, formData: FormData) {
     try {
         const supabase = await createSupabaseServerClient(); // Call the supabase
+        const password = formData.get("password");
+
+        // -------------------------------------------- Check State ------------------------------------------
+
+        if (!password || (typeof password === "string" && !password.includes("class-"))) return { title: "เกิดข้อผิดพลาด", message: "รหัสชั้นเรียนไม่ถูกต้อง", type: "error" } // Check password
+
+        // Get class id from password
+        const classID = password?.toString().split("-")[1];
+        if (!classID) return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลห้องเรียน", type: "error" }; // Check class id
 
         // Get class data
-        const { data: classData, error: classError } = await supabase
+        const { data: classData, error: classDataError }: any = await supabase
             .from("classs")
-            .select("c_banner")
-            .eq("c_id", classId)
-            .single();
-        if (classError) return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(classError.message), type: "error" }; // Check error
+            .select("*")
+            .eq("c_id", classID)
+        if (classData.length === 0) return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลห้องเรียน", type: "error" }; // Check class data
+        if (classDataError) return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(classDataError.message), type: "error" }; // Check error
+
+        // ------------------------------------------- Delete State ------------------------------------------
 
         // Delete class data
         const { error: deleteClassError } = await supabase
             .from("classs")
             .delete()
-            .eq("c_id", classId);
+            .eq("c_id", classID);
         if (deleteClassError) return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(deleteClassError.message), type: "error" }; // Check error
 
         // Delete class banner

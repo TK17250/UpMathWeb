@@ -11,7 +11,7 @@ import Link from "next/link";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faGear } from "@fortawesome/free-solid-svg-icons";
 import UpdateClassModal from "./form_modal";
-import ConfirmationModal from "@/app/component/modal1";
+import DeleteClassModal from "./delete_modal";
 
 // Define TypeScript interfaces
 interface AlertState {
@@ -72,6 +72,7 @@ export default function Class() {
     const [user, setUser] = useState<UserData | null>(null);
     const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
     const [action, formAction] = useActionState(updateClassData, Alert);
+    const [deleteAction, setDeleteAction] = useActionState(deleteClass, Alert);
     const [classData, setClassData] = useState<ClassData | null>(null);
     const [bannerUrl, setBannerUrl] = useState<string>("");
     const [classId, setClassId] = useState<number>(0);
@@ -157,16 +158,18 @@ export default function Class() {
             setIsModalOpen(false);
             router.push(`/classs/${classId}`);
         }
-    }, [action]);
 
-    // Handle delete class
-    const handleDeleteClass = async () => {
-        deleteClass(classId).then((res: any) => {
-            if (res) {
-                router.push("/login");
+        if (deleteAction && deleteAction.title && deleteAction.message && deleteAction.type && window.showAlert) {
+            window.showAlert(deleteAction.title, deleteAction.message, deleteAction.type as AlertType);
+            setShowDeleteModal(false);
+
+            if (deleteAction.type === "success") {
+                setTimeout(() => {
+                    router.push("/classs");
+                }, 3000);
             }
-        });
-    };
+        }
+    }, [action, deleteAction]);
 
     // Function to render class information
     const renderClassContent = () => {
@@ -396,17 +399,11 @@ export default function Class() {
                     />
 
                     {/* Delete Class */}
-                    {showDeleteModal && (
-                        <ConfirmationModal 
-                            open={showDeleteModal}
-                            setOpen={setShowDeleteModal}
-                            onConfirm={handleDeleteClass}
-                            title="ยืนยันการลบห้องเรียน"
-                            message="คุณต้องการลบห้องเรียนนี้หรือไม่?"
-                            confirmButtonText="ยืนยัน"
-                            cancelButtonText="ยกเลิก"
-                        />
-                    )}
+                    <DeleteClassModal 
+                        isOpen={showDeleteModal}
+                        onClose={() => setShowDeleteModal(false)}
+                        formAction={setDeleteAction}
+                    />
                 </div>
             )}
         </div>
