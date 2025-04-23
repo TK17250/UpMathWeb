@@ -166,7 +166,7 @@ export default function Class() {
             if (deleteAction.type === "success") {
                 setTimeout(() => {
                     router.push("/classs");
-                }, 3000);
+                }, 2000);
             }
         }
     }, [action, deleteAction]);

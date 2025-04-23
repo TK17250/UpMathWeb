@@ -171,14 +171,32 @@ async function updateClassData(prevState: any, formData: FormData) {
             return { title: "กรุณากรอกข้อมูลให้ครบถ้วน", message: "กรุณากรอกข้อมูลให้ครบถ้วน", type: "error" };
         }
 
-        // Check class name from email
-        const { data: classData, error: classCheckError } = await supabase
+        // Get current class data to check if name is changed
+        const { data: currentClassData, error: currentClassError } = await supabase
             .from("classs")
             .select("c_name")
-            .eq("c_name", className)
+            .eq("c_id", classID)
             .single();
-        if (classCheckError && classCheckError.code !== 'PGRST116') return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(classCheckError.message), type: "error" }; // Check error
-        if (classData) return { title: "เกิดข้อผิดพลาด", message: "ชื่อห้องเรียนนี้มีอยู่แล้ว", type: "error" }; // Check class name
+        if (currentClassError) {
+            return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(currentClassError.message), type: "error" };
+        }
+
+        // Only check for duplicate name if the name is being changed
+        if (currentClassData.c_name !== className) {
+            // Check class name from database
+            const { data: classData, error: classCheckError } = await supabase
+                .from("classs")
+                .select("c_name")
+                .eq("c_name", className)
+                .single();
+            if (classCheckError && classCheckError.code !== 'PGRST116') {
+                return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(classCheckError.message), type: "error" };
+            }
+            
+            if (classData) {
+                return { title: "เกิดข้อผิดพลาด", message: "ชื่อห้องเรียนนี้มีอยู่แล้ว", type: "error" };
+            }
+        }
 
         // ------------------------------------------- Manage State ------------------------------------------
 
@@ -190,9 +208,9 @@ async function updateClassData(prevState: any, formData: FormData) {
                 .eq("c_id", classID)
                 .select()
                 .single();
-
-            console.log(classUpdateError)
-            if (classUpdateError) return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(classUpdateError.message), type: "error" }; // Check error
+            if (classUpdateError) {
+                return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(classUpdateError.message), type: "error" };
+            }
         } else {
             // Get old banner
             const { data: oldClassData, error: oldClassError } = await supabase
@@ -200,13 +218,17 @@ async function updateClassData(prevState: any, formData: FormData) {
                 .select("c_banner")
                 .eq("c_id", classID)
                 .single();
-            if (oldClassError) return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(oldClassError.message), type: "error" }; // Check error
+            if (oldClassError) {
+                return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(oldClassError.message), type: "error" };
+            }
 
             // Delete old banner
             const { error: deleteError } = await supabase.storage
                 .from("classbackground")
                 .remove([oldClassData.c_banner]);
-            if (deleteError) return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(deleteError.message), type: "error" }; // Check error
+            if (deleteError) {
+                return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(deleteError.message), type: "error" };
+            }
 
             // Background management rename
             const classBGExt = classBG.name.split(".").pop();
@@ -217,7 +239,9 @@ async function updateClassData(prevState: any, formData: FormData) {
             const { data: uploadData, error: uploadError } = await supabase.storage
                 .from("classbackground")
                 .upload(bg_url, classBG);
-            if (uploadError) return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(uploadError.message), type: "error" }; // Check error
+            if (uploadError) {
+                return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(uploadError.message), type: "error" };
+            }
 
             // Update class data
             const { error: classUpdateError } = await supabase
@@ -229,12 +253,15 @@ async function updateClassData(prevState: any, formData: FormData) {
                 .eq("c_id", classID)
                 .select()
                 .single();
-            if (classUpdateError) return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(classUpdateError.message), type: "error" }; // Check error
+            if (classUpdateError) {
+                return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(classUpdateError.message), type: "error" };
+            }
         }
         
-        return { title: "สำเร็จ", message: "อัปเดตข้อมูลสำเร็จ", type: "success" }; // Success
+        return { title: "สำเร็จ", message: "อัปเดตข้อมูลสำเร็จ", type: "success" };
     } catch (error: any) {
         console.log("Error updating class data:", error.message);
+        return { title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์", message: error.message, type: "error" };
     }
 }
 
@@ -246,19 +273,41 @@ async function deleteClass(prevState: any, formData: FormData) {
 
         // -------------------------------------------- Check State ------------------------------------------
 
-        if (!password || (typeof password === "string" && !password.includes("class-"))) return { title: "เกิดข้อผิดพลาด", message: "รหัสชั้นเรียนไม่ถูกต้อง", type: "error" } // Check password
+        // ตรวจสอบว่า password ไม่เป็นค่าว่าง และมี format เป็น "class-" หรือไม่
+        if (!password || (typeof password === "string" && !password.includes("class-"))) {
+            return { title: "เกิดข้อผิดพลาด", message: "รหัสชั้นเรียนไม่ถูกต้อง", type: "error" };
+        }
 
-        // Get class id from password
-        const classID = password?.toString().split("-")[1];
-        if (!classID) return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลห้องเรียน", type: "error" }; // Check class id
+        // แยก classID จาก password
+        const classIDPart = password?.toString().split("-")[1];
+        
+        // ตรวจสอบว่า classID มีค่าหรือไม่
+        if (!classIDPart) {
+            return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลห้องเรียน", type: "error" };
+        }
+        
+        // ตรวจสอบว่า classID เป็นตัวเลขหรือไม่
+        const classID = Number(classIDPart);
+        if (isNaN(classID)) {
+            return { title: "เกิดข้อผิดพลาด", message: "รหัสชั้นเรียนไม่ถูกต้อง ต้องอยู่ในรูปแบบ class-[number]", type: "error" };
+        }
 
         // Get class data
-        const { data: classData, error: classDataError }: any = await supabase
+        const { data: classData, error: classDataError } = await supabase
             .from("classs")
             .select("*")
             .eq("c_id", classID)
-        if (classData.length === 0) return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลห้องเรียน", type: "error" }; // Check class data
-        if (classDataError) return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(classDataError.message), type: "error" }; // Check error
+            .single();
+        
+        // ตรวจสอบว่ามีข้อมูลห้องเรียนหรือไม่
+        if (!classData) {
+            return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลห้องเรียน", type: "error" };
+        }
+        
+        // ตรวจสอบข้อผิดพลาดจาก Supabase
+        if (classDataError) {
+            return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(classDataError.message), type: "error" };
+        }
 
         // ------------------------------------------- Delete State ------------------------------------------
 
@@ -267,17 +316,22 @@ async function deleteClass(prevState: any, formData: FormData) {
             .from("classs")
             .delete()
             .eq("c_id", classID);
-        if (deleteClassError) return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(deleteClassError.message), type: "error" }; // Check error
+        if (deleteClassError) {
+            return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(deleteClassError.message), type: "error" };
+        }
 
         // Delete class banner
         const { error: deleteBannerError } = await supabase.storage
             .from("classbackground")
             .remove([classData.c_banner]);
-        if (deleteBannerError) return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(deleteBannerError.message), type: "error" }; // Check error
+        if (deleteBannerError) {
+            return { title: "เกิดข้อผิดพลาด", message: translateServerSupabaseErrorToThai(deleteBannerError.message), type: "error" };
+        }
 
         return { title: "สำเร็จ", message: "ลบห้องเรียนสำเร็จ", type: "success" }; // Success
     } catch (error: any) {
         console.log("Error deleting class:", error.message);
+        return { title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์", message: error.message, type: "error" };
     }
 }
 
