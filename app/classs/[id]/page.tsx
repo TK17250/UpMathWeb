@@ -9,9 +9,11 @@ import Alert1, { AlertType } from "../../component/alert1";
 import { deleteClass, getClassBanner, getClassDataById, updateClassData } from "../../action/class";
 import Link from "next/link";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faGear } from "@fortawesome/free-solid-svg-icons";
+import { faBold, faGear, faItalic, faUnderline } from "@fortawesome/free-solid-svg-icons";
 import UpdateClassModal from "./form_modal";
 import DeleteClassModal from "./delete_modal";
+import { formatText, insertLink, updateHiddenInput } from "@/utils/richTextEditor";
+import { createNews, getNewsByClassId } from "@/app/action/news";
 
 // Define TypeScript interfaces
 interface AlertState {
@@ -68,11 +70,32 @@ const Alert: AlertState = {
     type: "",
 }
 
+interface NewsItem {
+    n_id: string;
+    n_cid: string | number;
+    n_content: string;
+    n_time: string;
+}
+
+interface AlertState {
+    title: string;
+    message: any;
+    type: string;
+}
+
+interface NewsActionState {
+    title: string;
+    message: string;
+    type: string;
+}
+
 export default function Class() {
     const [user, setUser] = useState<UserData | null>(null);
     const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
     const [action, formAction] = useActionState(updateClassData, Alert);
     const [deleteAction, setDeleteAction] = useActionState(deleteClass, Alert);
+    const [newsAction, setNewsAction] = useActionState<NewsActionState, FormData>(createNews, Alert);
+    const [news, setNews] = useState<NewsItem[]>([]);
     const [classData, setClassData] = useState<ClassData | null>(null);
     const [bannerUrl, setBannerUrl] = useState<string>("");
     const [classId, setClassId] = useState<number>(0);
@@ -148,6 +171,20 @@ export default function Class() {
             }
         }
 
+        async function fetchNewsData() {
+            try {
+                const response = await getNewsByClassId(classId)
+                if (Array.isArray(response)) {
+                    setNews(response);
+                } else {
+                    console.error("Error fetching news data:", response.message);
+                }
+            } catch (error: any) {
+                console.error("Error fetching news data:", error.message);
+            }
+        }
+
+        fetchNewsData()
         fetchClassData();
     }, [classId, action]);
 
@@ -169,7 +206,23 @@ export default function Class() {
                 }, 2000);
             }
         }
-    }, [action, deleteAction]);
+
+        if (newsAction && newsAction.title && newsAction.message && newsAction.type && window.showAlert) {
+            window.showAlert(newsAction.title, newsAction.message, newsAction.type as AlertType);
+            
+            // ถ้าสำเร็จ ให้ล้างข้อมูลใน editor
+            if (newsAction.type === "success") {
+                const editor = document.getElementById('editor');
+                if (editor) {
+                    updateHiddenInput(editor);
+                }
+
+                getNewsByClassId(classId).then((res: any) => {
+                    setNews(res)
+                })
+            }
+        }
+    }, [action, deleteAction, newsAction]);
 
     // Function to render class information
     const renderClassContent = () => {
@@ -291,6 +344,161 @@ export default function Class() {
                             ) : (
                                 <p className="text-sm text-white/60 mt-3">ยังไม่มีนักเรียนในห้องเรียนนี้</p>
                             )}
+                        </div>
+                    </div>
+
+                    {/* News Section */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:col-span-2 mb-4">
+                        {/* New Announcement Box */}
+                        <div className="border-none border-[#002D4A] hover:border-[#80ED99] bg-[#203D4F] rounded-lg p-4">
+                            {/* Title */}
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-xl font-bold">ประกาศข่าวสาร</h2>
+                            </div>
+                            
+                            {/* Post announcement input with form */}
+                            <form action={setNewsAction}>
+                                <div className="bg-[#2D4A5B] rounded-lg p-4">
+                                    <div className="flex flex-col">
+                                        {/* Rich text editor toolbar */}
+                                        <div className="flex items-center bg-[#1a3240] p-2 rounded-t-lg">
+                                            <button 
+                                                type="button"
+                                                className="p-1.5 text-white/70 hover:text-[#80ED99] hover:bg-white/10 mr-1 w-7 h-7 flex items-center justify-center rounded"
+                                                onClick={() => formatText('bold')}
+                                                title="ตัวหนา"
+                                            >
+                                                <FontAwesomeIcon 
+                                                    icon={faBold} 
+                                                    className="w-3 h-3"
+                                                />
+                                            </button>
+                                            <button 
+                                                type="button"
+                                                className="p-1.5 text-white/70 hover:text-[#80ED99] hover:bg-white/10 mr-1 w-7 h-7 flex items-center justify-center rounded"
+                                                onClick={() => formatText('italic')}
+                                                title="ตัวเอียง"
+                                            >
+                                                <FontAwesomeIcon 
+                                                    icon={faItalic} 
+                                                    className="w-3 h-3"
+                                                />
+                                            </button>
+                                            <button 
+                                                type="button"
+                                                className="p-1.5 text-white/70 hover:text-[#80ED99] hover:bg-white/10 mr-1 w-7 h-7 flex items-center justify-center rounded"
+                                                onClick={() => formatText('underline')}
+                                                title="ขีดเส้นใต้"
+                                            >
+                                                <FontAwesomeIcon 
+                                                    icon={faUnderline} 
+                                                    className="w-3 h-3"
+                                                />
+                                            </button>
+                                            <div className="h-4 w-px bg-white/20 mx-1"></div>
+                                            <button 
+                                                type="button"
+                                                className="p-1.5 text-white/70 hover:text-[#80ED99] hover:bg-white/10 mr-1 w-7 h-7 flex items-center justify-center rounded"
+                                                onClick={() => insertLink()}
+                                                title="แทรกลิงก์"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        
+                                        {/* Input field */}
+                                        <div 
+                                            id="editor" 
+                                            contentEditable="true"
+                                            className="w-full bg-transparent border border-[#1a3240] rounded-b-lg p-3 text-white min-h-[120px] focus:outline-none overflow-auto text-sm"
+                                            onInput={(e: React.FormEvent<HTMLDivElement>) => updateHiddenInput(e.currentTarget)}
+                                            dangerouslySetInnerHTML={{ __html: '' }}
+                                        ></div>
+                                        
+                                        {/* Hidden inputs to store data */}
+                                        <input type="hidden" name="content" id="content-input" />
+                                        <input type="hidden" name="classid" value={classId} />
+                                        
+                                        {/* Buttons */}
+                                        <div className="flex justify-end mt-3">
+                                            <button 
+                                                type="submit"
+                                                className="rounded-md bg-[#002D4A] px-6 py-2 text-sm text-white hover:text-[#80ED99] font-bold shadow-xs cursor-pointer border-[#002D4A] border-2 hover:border-[#80ED99] transition-all duration-300"
+                                            >
+                                                โพสต์
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                        
+                        {/* Previous Announcements Box */}
+                        <div className="border-none border-[#002D4A] hover:border-[#80ED99] bg-[#203D4F] rounded-lg p-4">
+                            {/* Title */}
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-xl font-bold">ประกาศก่อนหน้า</h2>
+                            </div>
+                            
+                            {/* Scrollable area for previous announcements */}
+                            <div className="overflow-y-auto max-h-[350px] pr-2 scrollbar-thin scrollbar-thumb-[#80ED99] scrollbar-track-[#002D4A]">
+                                {/* Check if there are announcements */}
+                                {news && news.length > 0 ? (
+                                    <div className="space-y-4">
+                                        {news.map((item: any, index: number) => (
+                                            <div key={index} className="bg-[#2D4A5B] rounded-lg p-4">
+                                                <div className="flex items-start">
+                                                    {/* Content */}
+                                                    <div className="flex-grow">
+                                                        <div className="flex items-center">
+                                                            <h4 className="font-bold">ครูผู้สอน</h4>
+                                                            {/* Time */}
+                                                            <span className="text-white/50 text-xs ml-2">
+                                                                {(() => {
+                                                                    const utcTime = new Date(item.n_time);
+                                                                    // ปรับเวลาเป็น GMT+7 (เวลาประเทศไทย)
+                                                                    const bangkokTime = new Date(utcTime.getTime() + (7 * 60 * 60 * 1000));
+                                                                    
+                                                                    // แสดงวันที่ในรูปแบบไทย
+                                                                    const thaiDate = bangkokTime.toLocaleDateString('th-TH', {
+                                                                        day: 'numeric',
+                                                                        month: 'short',
+                                                                        year: 'numeric'
+                                                                    });
+                                                                    
+                                                                    // แสดงเวลาในรูปแบบ 24 ชั่วโมง
+                                                                    const thaiTime = bangkokTime.toLocaleTimeString('th-TH', {
+                                                                        hour: '2-digit',
+                                                                        minute: '2-digit',
+                                                                        hour12: false
+                                                                    });
+                                                                    
+                                                                    return `${thaiDate} เวลา ${thaiTime} น.`;
+                                                                })()}
+                                                            </span>
+                                                        </div>
+                                                        <div 
+                                                            className="mt-2 news-content text-sm text-white/50"
+                                                            style={{ 
+                                                                wordWrap: 'break-word',
+                                                                overflowWrap: 'break-word',
+                                                                wordBreak: 'break-word',
+                                                                whiteSpace: 'pre-wrap',
+                                                                hyphens: 'auto'
+                                                            }}
+                                                            dangerouslySetInnerHTML={{ __html: item.n_content }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-white/60 text-sm">ยังไม่มีประกาศในห้องเรียนนี้</p>
+                                )}
+                            </div>
                         </div>
                     </div>
 
