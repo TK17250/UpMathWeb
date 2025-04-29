@@ -83,7 +83,58 @@ async function getNewsByClassId(classid: number) {
     }
 }
 
+// Update news
+async function updateNews(prevState: any, formData: FormData) {
+    try {
+        const id = formData.get("id") as string;
+        const content = formData.get("content") as string;
+        if (content == "" || !id) return { title: "เกิดข้อผิดพลาด", message: "กรุณากรอกเนื้อหา", type: "error" } // Check empty
+
+        const contentSanitized = sanitizeContent(content); // Sanitize HTML
+
+        // Update News
+        const supabase = await createSupabaseServerClient(); // Call Supabase
+        const { error } = await supabase
+            .from("news")
+            .update({
+                n_content: contentSanitized,
+            })
+            .eq("n_id", id)
+        if (error) {
+            console.log("เกิดข้อผิดพลาด", error.message);
+            return { title: "เกิดข้อผิดพลาด", message: error.message, type: "error" }
+        }
+
+        return { title: "สำเร็จ", message: "บันทึกข้อมูลเรียบร้อย", type: "success" }
+    } catch (error: any) {
+        console.log("เกิดข้อผิดพลาดฝั่งเซิฟเวอร์", error.message);
+        return { title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์", message: error.message, type: "error" }
+    }
+}
+
+// Delete news
+async function deleteNews(id: number) {
+    try {
+        const supabase = await createSupabaseServerClient(); // Call Supabase
+        const { error } = await supabase
+            .from("news")
+            .delete()
+            .eq("n_id", id)
+        if (error) {
+            console.log("เกิดข้อผิดพลาด", error.message);
+            return { title: "เกิดข้อผิดพลาด", message: error.message, type: "error" }
+        }
+
+        return { title: "สำเร็จ", message: "ลบข้อมูลเรียบร้อย", type: "success" }
+    } catch (error: any) {
+        console.log("เกิดข้อผิดพลาดฝั่งเซิฟเวอร์", error.message);
+        return { title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์", message: error.message, type: "error" }
+    }
+}
+
 export {
     createNews,
     getNewsByClassId,
+    updateNews,
+    deleteNews,
 };

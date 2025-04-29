@@ -9,11 +9,13 @@ import Alert1, { AlertType } from "../../component/alert1";
 import { deleteClass, getClassBanner, getClassDataById, updateClassData } from "../../action/class";
 import Link from "next/link";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faBold, faGear, faItalic, faUnderline } from "@fortawesome/free-solid-svg-icons";
+import { faBold, faGear, faItalic, faTrash, faUnderline } from "@fortawesome/free-solid-svg-icons";
 import UpdateClassModal from "./form_modal";
 import DeleteClassModal from "./delete_modal";
 import { formatText, insertLink, updateHiddenInput } from "@/utils/richTextEditor";
-import { createNews, getNewsByClassId } from "@/app/action/news";
+import { createNews, deleteNews, getNewsByClassId, updateNews } from "@/app/action/news";
+import ConfirmationModal2 from "@/app/component/modal2";
+import ConfirmationModal from "@/app/component/modal1";
 
 // Define TypeScript interfaces
 interface AlertState {
@@ -103,6 +105,12 @@ export default function Class() {
     const [error, setError] = useState<AlertState | null>(null);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+    const [editingNewsId, setEditingNewsId] = useState<string | null>(null);
+    const [editContent, setEditContent] = useState<string>("");
+    const [showDeleteNewsModal, setShowDeleteNewsModal] = useState(false);
+    const [deleteNewsById, setDeleteNewsById] = useState<number | null>(null);
+    const [showUpdateModal, setShowUpdateModal] = useState(false);
 
     // Check login
     const router = useRouter();
@@ -223,6 +231,97 @@ export default function Class() {
             }
         }
     }, [action, deleteAction, newsAction]);
+
+    const handleEditNews = (newsId: string, content: string) => {
+        setEditingNewsId(newsId);
+        setEditContent(content);
+        
+        // จำเป็นต้องรอให้ DOM render ก่อน แล้วจึงเริ่มการแก้ไข
+        setTimeout(() => {
+          const editor = document.getElementById('edit-editor');
+          if (editor) {
+            editor.innerHTML = content;
+            editor.focus();
+          }
+        }, 10);
+    };
+      
+    // ฟังก์ชันบันทึกการแก้ไข
+    const handleSaveEdit = async () => {
+        if (!editingNewsId) return;
+    
+        const content = (document.getElementById('edit-content-input') as HTMLInputElement)?.value;
+        if (!content) return window.showAlert?.("เกิดข้อผิดพลาด", "กรุณากรอกเนื้อหา", "error");
+    
+        try {
+            const formData = new FormData();
+            formData.append("id", editingNewsId);
+            formData.append("content", content);
+    
+            const result = await updateNews(null, formData); // ส่ง FormData ไปยังฟังก์ชัน updateNews
+    
+            if (result.type === "success") {
+                getNewsByClassId(classId).then((res: any) => {
+                    setNews(res)
+                })
+                
+                window.showAlert?.("สำเร็จ", "อัปเดตข่าวประกาศเรียบร้อยแล้ว", "success");
+            } else {
+                window.showAlert?.("เกิดข้อผิดพลาด", result.message || "ไม่สามารถอัปเดตข่าวได้", "error");
+            }
+        } catch (error) {
+            console.error("Error updating news:", error);
+            window.showAlert?.("เกิดข้อผิดพลาด", "ไม่สามารถอัปเดตข่าวได้", "error");
+        } finally {
+            // ยกเลิกโหมดแก้ไข
+            setEditingNewsId(null);
+            setEditContent("");
+        }
+    };    
+    
+    // ฟังก์ชันยกเลิกการแก้ไข
+    const handleCancelEdit = () => {
+        setEditingNewsId(null);
+        setEditContent("");
+    };
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+          if (openMenuId && !((event.target as Element).closest('.news-menu-container'))) {
+            setOpenMenuId(null);
+          }
+        };
+      
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+          document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [openMenuId]);
+
+    // Delete News
+    const handleConfirmDeleteNews = async () => {
+        if (!deleteNewsById) return;
+    
+        try {
+            const result = await deleteNews(deleteNewsById)
+            if (result.type === "success") {
+                getNewsByClassId(classId).then((res: any) => {
+                    setNews(res)
+                })
+
+                window.showAlert?.("สำเร็จ", "ลบข่าวประกาศเรียบร้อยแล้ว", "success");
+            } else {
+                window.showAlert?.("เกิดข้อผิดพลาด", result.message || "ไม่สามารถลบข่าวได้", "error");
+            }
+        } catch (error) {
+            console.error("Error deleting news:", error);
+            window.showAlert?.("เกิดข้อผิดพลาด", "ไม่สามารถลบข่าวได้", "error");
+        } finally {
+            // ปิด modal และเคลียร์ id
+            setShowDeleteModal(false);
+            setDeleteNewsById(null);
+        }
+    };
 
     // Function to render class information
     const renderClassContent = () => {
@@ -348,7 +447,7 @@ export default function Class() {
                     </div>
 
                     {/* News Section */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:col-span-2 mb-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:col-span-2">
                         {/* New Announcement Box */}
                         <div className="border-none border-[#002D4A] hover:border-[#80ED99] bg-[#203D4F] rounded-lg p-4">
                             {/* Title */}
@@ -448,50 +547,166 @@ export default function Class() {
                                 {news && news.length > 0 ? (
                                     <div className="space-y-4">
                                         {news.map((item: any, index: number) => (
-                                            <div key={index} className="bg-[#2D4A5B] rounded-lg p-4">
-                                                <div className="flex items-start">
-                                                    {/* Content */}
-                                                    <div className="flex-grow">
-                                                        <div className="flex items-center">
-                                                            <h4 className="font-bold">ครูผู้สอน</h4>
-                                                            {/* Time */}
-                                                            <span className="text-white/50 text-xs ml-2">
-                                                                {(() => {
-                                                                    const utcTime = new Date(item.n_time);
-                                                                    // ปรับเวลาเป็น GMT+7 (เวลาประเทศไทย)
-                                                                    const bangkokTime = new Date(utcTime.getTime() + (7 * 60 * 60 * 1000));
-                                                                    
-                                                                    // แสดงวันที่ในรูปแบบไทย
-                                                                    const thaiDate = bangkokTime.toLocaleDateString('th-TH', {
-                                                                        day: 'numeric',
-                                                                        month: 'short',
-                                                                        year: 'numeric'
-                                                                    });
-                                                                    
-                                                                    // แสดงเวลาในรูปแบบ 24 ชั่วโมง
-                                                                    const thaiTime = bangkokTime.toLocaleTimeString('th-TH', {
-                                                                        hour: '2-digit',
-                                                                        minute: '2-digit',
-                                                                        hour12: false
-                                                                    });
-                                                                    
-                                                                    return `${thaiDate} เวลา ${thaiTime} น.`;
-                                                                })()}
-                                                            </span>
-                                                        </div>
-                                                        <div 
-                                                            className="mt-2 news-content text-sm text-white/50"
-                                                            style={{ 
-                                                                wordWrap: 'break-word',
-                                                                overflowWrap: 'break-word',
-                                                                wordBreak: 'break-word',
-                                                                whiteSpace: 'pre-wrap',
-                                                                hyphens: 'auto'
+                                            <div key={index} className="bg-[#2D4A5B] rounded-lg p-4 relative">
+                                                {editingNewsId === item.n_id ? (
+                                                    // โหมดแก้ไข
+                                                    <div className="flex flex-col">
+                                                        {/* Delete */}
+                                                        <button 
+                                                            className="absolute top-3 right-3 text-red-400 hover:text-red-600 cursor-pointer"
+                                                            onClick={() => {
+                                                                setDeleteNewsById(item.n_id);
+                                                                setShowDeleteNewsModal(true);
                                                             }}
-                                                            dangerouslySetInnerHTML={{ __html: item.n_content }}
-                                                        />
+                                                        >
+                                                            <FontAwesomeIcon icon={faTrash} />
+                                                        </button>
+
+                                                        {/* Title */}
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <h4 className="font-bold">แก้ไขประกาศ</h4>
+                                                        </div>
+                                                        
+                                                        {/* Rich text editor toolbar สำหรับแก้ไข */}
+                                                        <div className="flex items-center bg-[#1a3240] p-2 rounded-t-lg">
+                                                            <button 
+                                                                type="button"
+                                                                className="p-1.5 text-white/70 hover:text-[#80ED99] hover:bg-white/10 mr-1 w-7 h-7 flex items-center justify-center rounded"
+                                                                onClick={() => formatText('bold')}
+                                                                title="ตัวหนา"
+                                                            >
+                                                                <FontAwesomeIcon 
+                                                                    icon={faBold} 
+                                                                    className="w-3 h-3"
+                                                                />
+                                                            </button>
+                                                            <button 
+                                                                type="button"
+                                                                className="p-1.5 text-white/70 hover:text-[#80ED99] hover:bg-white/10 mr-1 w-7 h-7 flex items-center justify-center rounded"
+                                                                onClick={() => formatText('italic')}
+                                                                title="ตัวเอียง"
+                                                            >
+                                                                <FontAwesomeIcon 
+                                                                    icon={faItalic} 
+                                                                    className="w-3 h-3"
+                                                                />
+                                                            </button>
+                                                            <button 
+                                                                type="button"
+                                                                className="p-1.5 text-white/70 hover:text-[#80ED99] hover:bg-white/10 mr-1 w-7 h-7 flex items-center justify-center rounded"
+                                                                onClick={() => formatText('underline')}
+                                                                title="ขีดเส้นใต้"
+                                                            >
+                                                                <FontAwesomeIcon 
+                                                                    icon={faUnderline} 
+                                                                    className="w-3 h-3"
+                                                                />
+                                                            </button>
+                                                            <div className="h-4 w-px bg-white/20 mx-1"></div>
+                                                            <button 
+                                                                type="button"
+                                                                className="p-1.5 text-white/70 hover:text-[#80ED99] hover:bg-white/10 mr-1 w-7 h-7 flex items-center justify-center rounded"
+                                                                onClick={() => insertLink()}
+                                                                title="แทรกลิงก์"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                                                </svg>
+                                                            </button>
+                                                        </div>
+                                                        
+                                                        {/* Input field สำหรับแก้ไข */}
+                                                        <div 
+                                                            id="edit-editor" 
+                                                            contentEditable="true"
+                                                            className="w-full bg-transparent border border-[#1a3240] rounded-b-lg p-3 text-white min-h-[120px] focus:outline-none overflow-auto text-sm"
+                                                            onInput={(e: React.FormEvent<HTMLDivElement>) => {
+                                                                const editInput = document.getElementById('edit-content-input');
+                                                                if (editInput) {
+                                                                    (editInput as HTMLInputElement).value = e.currentTarget.innerHTML;
+                                                                }
+                                                            }}
+                                                        ></div>
+                                                        
+                                                        {/* Hidden input */}
+                                                        <input type="hidden" id="edit-content-input" />
+                                                        
+                                                        {/* Action buttons */}
+                                                        <div className="flex justify-end mt-3 space-x-2">
+                                                            <button 
+                                                                className="px-4 py-2 text-sm text-white bg-[#203D4F]/80 hover:bg-[#203D4F] rounded-lg transition-colors cursor-pointer"
+                                                                onClick={handleCancelEdit}
+                                                            >
+                                                                ยกเลิก
+                                                            </button>
+                                                            <button 
+                                                                className="px-4 py-2 text-sm text-white bg-[#002D4A] hover:text-[#80ED99] font-bold rounded-lg border-[#002D4A] border-2 hover:border-[#80ED99] transition-all duration-300 cursor-pointer"
+                                                                onClick={handleSaveEdit}
+                                                            >
+                                                                บันทึก
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                </div>
+                                                ) : (
+                                                    // โหมดแสดงเนื้อหาปกติ
+                                                    <div className="flex items-start">
+                                                        {/* Content */}
+                                                        <div className="flex-grow">
+                                                            <div className="flex items-center justify-between">
+                                                                <div>
+                                                                    <h4 className="font-bold">ครูผู้สอน</h4>
+                                                                    {/* Time */}
+                                                                    <span className="text-white/50 text-xs">
+                                                                        {(() => {
+                                                                            const utcTime = new Date(item.n_time);
+                                                                            // ปรับเวลาเป็น GMT+7 (เวลาประเทศไทย)
+                                                                            const bangkokTime = new Date(utcTime.getTime() + (7 * 60 * 60 * 1000));
+                                                                            
+                                                                            // แสดงวันที่ในรูปแบบไทย
+                                                                            const thaiDate = bangkokTime.toLocaleDateString('th-TH', {
+                                                                                day: 'numeric',
+                                                                                month: 'short',
+                                                                                year: 'numeric'
+                                                                            });
+                                                                            
+                                                                            // แสดงเวลาในรูปแบบ 24 ชั่วโมง
+                                                                            const thaiTime = bangkokTime.toLocaleTimeString('th-TH', {
+                                                                                hour: '2-digit',
+                                                                                minute: '2-digit',
+                                                                                hour12: false
+                                                                            });
+                                                                            
+                                                                            return `${thaiDate} เวลา ${thaiTime} น.`;
+                                                                        })()}
+                                                                    </span>
+                                                                </div>
+                                                                
+                                                                {/* ปุ่มแก้ไข */}
+                                                                <button 
+                                                                    className="text-white/50 hover:text-[#80ED99] bg-[#1a3240] hover:bg-[#1a3240]/80 rounded-lg p-2 transition-colors duration-200 cursor-pointer"
+                                                                    onClick={() => handleEditNews(item.n_id, item.n_content)}
+                                                                    title="แก้ไขประกาศนี้"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                                    </svg>
+                                                                </button>
+                                                            </div>
+                                                            
+                                                            <div 
+                                                                className="mt-2 news-content text-sm text-white/50"
+                                                                style={{ 
+                                                                    wordWrap: 'break-word',
+                                                                    overflowWrap: 'break-word',
+                                                                    wordBreak: 'break-word',
+                                                                    whiteSpace: 'pre-wrap',
+                                                                    hyphens: 'auto'
+                                                                }}
+                                                                dangerouslySetInnerHTML={{ __html: item.n_content }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
@@ -611,6 +826,28 @@ export default function Class() {
                         isOpen={showDeleteModal}
                         onClose={() => setShowDeleteModal(false)}
                         formAction={setDeleteAction}
+                    />
+
+                    {/* Confirm Update News */}
+                    <ConfirmationModal2
+                        open={showUpdateModal}
+                        setOpen={setShowUpdateModal}
+                        onConfirm={handleSaveEdit}
+                        title="ยืนยันการอัปเดต"
+                        message="คุณแน่ใจว่าต้องการบันทึกการแก้ไขข่าวประกาศหรือไม่?"
+                        confirmButtonText="บันทึก"
+                        cancelButtonText="ยกเลิก"
+                    />
+
+                    {/* Confirm Delete News */}
+                    <ConfirmationModal
+                        open={showDeleteNewsModal}
+                        setOpen={setShowDeleteNewsModal}
+                        onConfirm={handleConfirmDeleteNews}
+                        title="ยืนยันการลบ"
+                        message="คุณแน่ใจว่าต้องการลบข่าวประกาศนี้หรือไม่?"
+                        confirmButtonText="ยืนยันการลบ"
+                        cancelButtonText="ยกเลิก"
                     />
                 </div>
             )}
