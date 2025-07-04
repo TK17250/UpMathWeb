@@ -1,4 +1,5 @@
 'use client';
+
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useState } from "react";
 import { getUser } from "@/app/action/getuser";
@@ -7,8 +8,9 @@ import Sidebar from "@/app/component/sidebar";
 import Footer from "@/app/component/footer";
 import Alert1, { AlertType } from "../component/alert1";
 import CreateMediaModal from "./form_modal";
-import { createMedia, getMediaWithSignedUrls } from "../action/media";
-import { ClockIcon, FilmIcon, PhotoIcon, EllipsisVerticalIcon } from "@heroicons/react/24/outline";
+import { createMedia, getMediaWithSignedUrls, updateMedia } from "../action/media";
+import UpdateMediaModal from "./update_form_modal";
+import { ClockIcon, FilmIcon, PhotoIcon, EllipsisVerticalIcon, PencilIcon, TrashIcon } from "@heroicons/react/24/outline";
 
 // Initial state for the server action
 const Alert = {
@@ -34,8 +36,18 @@ export default function Medias() {
     const [user, setUser] = useState<any>(null);
     const [mediaData, setMediaData] = useState<MediaItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [action, formAction] = useActionState(createMedia, Alert);
+
+    // States for Create Modal
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+    const [createAction, createFormAction] = useActionState(createMedia, Alert);
+
+    // States for Update Modal
+    const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+    const [editingMediaItem, setEditingMediaItem] = useState<MediaItem | null>(null);
+    const [updateAction, updateFormAction] = useActionState(updateMedia, Alert);
+
+    // State for dropdown menu
+    const [openMenuId, setOpenMenuId] = useState<number | null>(null);
 
     const router = useRouter();
 
@@ -50,7 +62,7 @@ export default function Medias() {
         });
     }, [router]);
 
-    // Fetch media data when the component mounts or after a new media is created
+    // Fetch media data when component mounts or after a create/update action
     useEffect(() => {
         if (user) {
             setIsLoading(true);
@@ -58,23 +70,52 @@ export default function Medias() {
                 if (Array.isArray(res)) {
                     setMediaData(res);
                 } else {
-                    // Handle potential error object from the action
                     console.error("Failed to fetch media data:", res?.message);
                 }
                 setIsLoading(false);
             });
         }
-    }, [user, action]); // Re-fetch data when `action` changes (i.e., after form submission)
+    }, [user, createAction, updateAction]); // Re-fetch on create or update
 
-    // Show alert when server action is completed
+    // Show alert for create action
     useEffect(() => {
-        if (action && action.title && action.message && action.type && window.showAlert) {
-            window.showAlert(action.title, action.message, action.type as AlertType);
-            if (action.type === 'success') {
-                setIsModalOpen(false);
+        if (createAction.type) { // Check if action has been triggered
+            window.showAlert?.(createAction.title, createAction.message, createAction.type as AlertType);
+            if (createAction.type === 'success') {
+                setIsCreateModalOpen(false);
             }
         }
-    }, [action]);
+    }, [createAction]);
+
+    // Show alert for update action
+    useEffect(() => {
+        if (updateAction.type) { // Check if action has been triggered
+            window.showAlert?.(updateAction.title, updateAction.message, updateAction.type as AlertType);
+            if (updateAction.type === 'success') {
+                setIsUpdateModalOpen(false);
+            }
+        }
+    }, [updateAction]);
+
+    // Effect to close dropdown menu when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (openMenuId && !(event.target as Element).closest(`.menu-container-${openMenuId}`)) {
+                setOpenMenuId(null);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [openMenuId]);
+
+    // Handler to open the edit modal
+    const handleEditClick = (item: MediaItem) => {
+        setEditingMediaItem(item);
+        setIsUpdateModalOpen(true);
+        setOpenMenuId(null); // Close the dropdown
+    };
 
     const renderMediaCards = () => {
         if (isLoading) {
@@ -108,31 +149,49 @@ export default function Medias() {
                             backgroundColor: item.fileType !== 'image' ? '#203D4F' : 'transparent',
                         }}
                     >
-                        {/* Dark overlay for text readability */}
                         <div className="absolute inset-0 bg-black/60 group-hover:bg-black/70 transition-colors duration-300"></div>
-
-                        {/* Background icon for non-image files */}
                         {item.fileType === 'video' && (
                             <FilmIcon className="absolute z-0 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-24 w-24 text-white/10" />
                         )}
 
-                        {/* Card Content */}
                         <div className="relative z-10 flex flex-col h-full">
-                            {/* Header with Title and Actions */}
                             <div className="flex justify-between items-start">
                                 <h2 className="text-xl font-bold transition-all duration-300 pr-2 line-clamp-2">
                                     {item.m_name}
                                 </h2>
-                                {/* Placeholder for future Update/Delete actions */}
-                                <button
-                                    className="p-1.5 rounded-full text-white/60 hover:text-white hover:bg-white/10 transition-all duration-200"
-                                    onClick={(e) => e.stopPropagation()} // Prevents parent onClick
-                                >
-                                    <EllipsisVerticalIcon className="h-6 w-6" />
-                                </button>
+                                <div className={`relative menu-container-${item.m_id}`}>
+                                    <button
+                                        className="p-1.5 rounded-full text-white/60 hover:text-white hover:bg-white/10 transition-all duration-200"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setOpenMenuId(openMenuId === item.m_id ? null : item.m_id);
+                                        }}
+                                    >
+                                        <EllipsisVerticalIcon className="h-6 w-6" />
+                                    </button>
+                                    {openMenuId === item.m_id && (
+                                        <div className="absolute top-full right-0 mt-2 w-36 bg-[#2D4A5B] border border-[#4A6B8A] rounded-lg shadow-xl z-20 animate-[zoomIn_150ms_ease-out]">
+                                            <ul className="py-1">
+                                                <li>
+                                                    <button
+                                                        onClick={() => handleEditClick(item)}
+                                                        className="w-full flex items-center px-4 py-2 text-sm text-white hover:bg-white/10 transition-colors"
+                                                    >
+                                                        <PencilIcon className="h-4 w-4 mr-3" />
+                                                        แก้ไข
+                                                    </button>
+                                                </li>
+                                                <li>
+                                                    <button className="w-full flex items-center px-4 py-2 text-sm text-red-400 hover:bg-white/10 transition-colors">
+                                                        <TrashIcon className="h-4 w-4 mr-3" />
+                                                        ลบ
+                                                    </button>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-
-                            {/* Footer with Details */}
                             <div className="mt-auto pt-4">
                                 <p className="text-sm text-white/80 line-clamp-2 mb-3">
                                     {item.m_media.description}
@@ -166,7 +225,7 @@ export default function Medias() {
                                 <h1 className="text-2xl font-bold text-white">คลังสื่อการเรียนรู้</h1>
                                 <button
                                     className="text-white bg-[#203D4F] px-5 py-2 rounded-md cursor-pointer hover:bg-[#002D4A] transition-all duration-300 hover:text-[#80ED99] ml-auto block shrink-0"
-                                    onClick={() => setIsModalOpen(true)}>
+                                    onClick={() => setIsCreateModalOpen(true)}>
                                     + เพิ่มสื่อการเรียนรู้
                                 </button>
                             </div>
@@ -178,9 +237,16 @@ export default function Medias() {
                     <Footer />
 
                     <CreateMediaModal
-                        isOpen={isModalOpen}
-                        onClose={() => setIsModalOpen(false)}
-                        formAction={formAction}
+                        isOpen={isCreateModalOpen}
+                        onClose={() => setIsCreateModalOpen(false)}
+                        formAction={createFormAction}
+                    />
+
+                    <UpdateMediaModal
+                        isOpen={isUpdateModalOpen}
+                        onClose={() => setIsUpdateModalOpen(false)}
+                        formAction={updateFormAction}
+                        mediaItem={editingMediaItem}
                     />
                 </div>
             )}
