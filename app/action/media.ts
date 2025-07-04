@@ -30,30 +30,33 @@ async function createMedia(prevState: any, formData: any) {
             return { title: "เกิดข้อผิดพลาด", message: "ขนาดไฟล์ต้องไม่เกิน 50MB", type: "error" };
         }
 
-        // Check file name
-        const fileName = media.name.split(".");
-        const fileExtension = fileName[fileName.length - 1];
-        const allowedExtensions = ["jpg", "jpeg", "png", "mp4", "mov"];
-        if (!allowedExtensions.includes(fileExtension)) {
-            return { title: "เกิดข้อผิดพลาด", message: "กรุณาอัพโหลดไฟล์รูปภาพหรือวิดีโอเท่านั้น", type: "error" };
-        }
-
         // Get teacher data
         const userData = await getUserData();
         if (!userData) return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลผู้ใช้", type: "error" };
 
-        // Check media name form data
+        // Check media name from database
         const { data: mediaNameData, error: mediaNameError } = await supabase
             .from("medias")
             .select("m_name")
             .eq("m_name", name)
+            .eq("m_tid", userData.t_id) // Check only for the current user's media
             .single();
-        if (!mediaNameError) return { title: "เกิดข้อผิดพลาด", message: "ไม่สามารถตรวจสอบชื่อสื่อได้", type: "error" };
-        if (mediaNameData) return { title: "เกิดข้อผิดพลาด", message: "มีชื่อสื่ออยู่ในระบบแล้ว", type: "error" };
+            
+        // If a record is found, it's a duplicate
+        if (mediaNameData) {
+            return { title: "เกิดข้อผิดพลาด", message: "คุณมีสื่อการสอนชื่อนี้อยู่แล้ว", type: "error" };
+        }
+
+        // A PostgREST error code 'PGRST116' means no rows were found, which is what we want.
+        // Any other error is a real problem.
+        if (mediaNameError && mediaNameError.code !== 'PGRST116') {
+            return { title: "เกิดข้อผิดพลาด", message: mediaNameError.message, type: "error" };
+        }
 
         // ------------------------------------ Manage ------------------------------------
 
         // Rename file;
+        const fileExtension = media.name.split('.').pop();
         const fileNameNew = `${userData.t_id}/${Date.now()}.${fileExtension}`;
 
         // Upload file to storage
@@ -97,7 +100,7 @@ async function getMedia() {
         const { data: mediaData, error: mediaError } = await supabase
             .from("medias")
             .select("*")
-            .eq("m_temail", userData.t_email)
+            .eq("m_tid", userData.t_id) // Use t_id for better indexing
             .order("m_id", { ascending: false });
         if (mediaError) return { title: "เกิดข้อผิดพลาด", message: mediaError.message, type: "error" };
 
@@ -108,7 +111,59 @@ async function getMedia() {
     }
 }
 
+// ------------------------------------ Get media for Read ------------------------------------
+// Get media data and their signed URLs for display
+async function getMediaWithSignedUrls() {
+    try {
+        const mediaDataResult = await getMedia();
+        if (!Array.isArray(mediaDataResult)) {
+            // If getMedia returned an error object, just return it
+            return mediaDataResult;
+        }
+
+        const supabase = await createSupabaseServerClient();
+
+        // Use Promise.all for better performance
+        const mediaWithUrls = await Promise.all(
+            mediaDataResult.map(async (media) => {
+                const filePath = media.m_media?.file_name;
+                if (!filePath) {
+                    return { ...media, signedUrl: null, fileType: 'unknown' };
+                }
+
+                // Get signed URL from Supabase Storage (expires in 1 hour)
+                const { data, error } = await supabase.storage
+                    .from('medias')
+                    .createSignedUrl(filePath, 3600);
+
+                if (error) {
+                    console.error("Error creating signed URL for", filePath, error.message);
+                    return { ...media, signedUrl: null, fileType: 'unknown' };
+                }
+                
+                // Determine file type for easier rendering on the client
+                const extension = filePath.split('.').pop()?.toLowerCase();
+                let fileType = 'unknown';
+                if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension)) {
+                    fileType = 'image';
+                } else if (['mp4', 'mov', 'webm', 'ogv'].includes(extension)) {
+                    fileType = 'video';
+                }
+
+                return { ...media, signedUrl: data.signedUrl, fileType };
+            })
+        );
+        
+        return mediaWithUrls;
+    } catch (error: any) {
+        console.log("Error getting media with URLs:", error.message);
+        return { title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์", message: error.message, type: "error" };
+    }
+}
+
+
 export {
     createMedia,
     getMedia,
+    getMediaWithSignedUrls
 }
