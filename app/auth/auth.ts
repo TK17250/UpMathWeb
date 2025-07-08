@@ -122,12 +122,12 @@ async function googleLogin() {
         const supabase = await createSupabaseServerClient()
         
         // ตรวจสอบว่าเราใช้ URL ที่ถูกต้อง
-        const baseUrl = process.env.SUPABASE_URL || 'http://localhost:3000';
+        const baseUrl = process.env.VERCEL_URL || 'http://localhost:3000';
         const { data, error } = await supabase.auth.signInWithOAuth({
             provider: "google",
             options: {
                 // redirectTo: `${baseUrl}/auth/callback`,
-                redirectTo: `http://localhost:3000/auth/callback`,
+                redirectTo: `${baseUrl}/auth/callback`,
                 scopes: 'email profile',
             },
         })
