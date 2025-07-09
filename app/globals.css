@@ -28,3 +28,37 @@ body, html {
 b {
   font-family: line-bold;
 }
+
+/* Hide scrollbar globally for all browsers */
+/* Webkit browsers (Chrome, Safari, Edge) */
+*::-webkit-scrollbar {
+  width: 0px;
+  background: transparent;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+/* Firefox */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+/* For select dropdown options styling */
+select option {
+  background-color: #203D4F;
+  color: white;
+  padding: 8px;
+}
+
+select option:hover,
+select option:focus {
+  background-color: #80ED99;
+  color: #203D4F;
+}
