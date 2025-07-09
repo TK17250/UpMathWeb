@@ -2,6 +2,7 @@
 import { createSupabaseServerClient } from "@/server/server"
 import { translateServerSupabaseErrorToThai } from "@/server/error"
 import { NextResponse } from "next/server"
+import { headers } from "next/headers"
 
 // Login
 async function login(prevState: any, formData: FormData): Promise<any> {
@@ -122,25 +123,26 @@ async function googleLogin() {
         const supabase = await createSupabaseServerClient()
         
         // ตรวจสอบว่าเราใช้ URL ที่ถูกต้อง
-        const getBaseUrl = () => {
-            // สำหรับ Vercel deployment
-            if (process.env.VERCEL_URL) {
-                return `https://${process.env.VERCEL_URL}`;
+        const getBaseUrl = async () => {
+            // ใช้ headers เพื่อดึง host จาก request
+            const headersList = await headers();
+            const host = headersList.get('host');
+            const protocol = headersList.get('x-forwarded-proto') || 'https';
+            
+            if (host) {
+                return `${protocol}://${host}`;
             }
-            // ถ้ามี custom domain
-            if (process.env.NEXT_PUBLIC_SITE_URL) {
-                return process.env.NEXT_PUBLIC_SITE_URL;
+            
+            // fallback สำหรับ development
+            if (process.env.NODE_ENV === 'development') {
+                return 'http://localhost:3000';
             }
-            // สำหรับ production ใช้ headers
-            if (process.env.NODE_ENV === 'production') {
-                // ใช้ request headers เพื่อหา origin
-                return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'localhost:3000'}`;
-            }
-            // development
-            return 'http://localhost:3000';
+            
+            // fallback สำหรับ production
+            return `https://${process.env.VERCEL_URL || 'https://upmath-web.vercel.app'}`;
         };
         
-        const baseUrl = getBaseUrl();
+        const baseUrl = await getBaseUrl();
         const { data, error } = await supabase.auth.signInWithOAuth({
             provider: "google",
             options: {
