@@ -123,9 +123,20 @@ async function googleLogin() {
         
         // ตรวจสอบว่าเราใช้ URL ที่ถูกต้อง
         const getBaseUrl = () => {
+            // สำหรับ Vercel deployment
             if (process.env.VERCEL_URL) {
                 return `https://${process.env.VERCEL_URL}`;
             }
+            // ถ้ามี custom domain
+            if (process.env.NEXT_PUBLIC_SITE_URL) {
+                return process.env.NEXT_PUBLIC_SITE_URL;
+            }
+            // สำหรับ production ใช้ headers
+            if (process.env.NODE_ENV === 'production') {
+                // ใช้ request headers เพื่อหา origin
+                return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'localhost:3000'}`;
+            }
+            // development
             return 'http://localhost:3000';
         };
         
