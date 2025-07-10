@@ -1,10 +1,18 @@
+'use client'; // Add this if not present
 import React, { useEffect, useState } from 'react';
 import { getUserData } from '../action/getuser';
 
 const Sidebar = () => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [userData, setUserData] = useState<any>(null);
-    const activePage = window.location.pathname;
+    // Use state to avoid window is not defined error during server-side rendering
+    const [activePage, setActivePage] = useState('');
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            setActivePage(window.location.pathname);
+        }
+    }, []);
 
     // Get user data
     useEffect(() => {
@@ -40,15 +48,12 @@ const Sidebar = () => {
         const currentDay = today.getDate();
         const currentMonth = today.getMonth();
         const currentYear = today.getFullYear();
-        const thaiYear = currentYear + 543; // Convert to Buddhist Era
+        const thaiYear = currentYear + 543;
 
         const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
         const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
 
-        // Create array with empty spots for days from previous month
         const days: (number | null)[] = Array(firstDayOfMonth).fill(null);
-
-        // Add days of current month
         for (let i = 1; i <= daysInMonth; i++) {
             days.push(i);
         }
@@ -77,7 +82,9 @@ const Sidebar = () => {
     ];
 
     return (
-        <div className="h-full">
+        // The change is in the line below.
+        // Removed `h-full` and added `lg:h-full` to the root div.
+        <div className="lg:h-full"> 
             {/* Hamburger button for mobile */}
             <button
                 className="lg:hidden fixed top-4 right-4 z-50 p-2 rounded-md bg-[#203D4F] border-4 border-[#002D4A] text-white outline-none"
@@ -92,8 +99,6 @@ const Sidebar = () => {
             <div
                 className={`fixed inset-y-0 left-0 transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 transition duration-200 ease-in-out z-30 w-64 bg-[#203D4F] overflow-y-auto lg:hidden`}
             >
-
-                {/* Menu items */}
                 <nav className="mt-5 px-2">
                     {menuItems.map((item) => (
                         <a
@@ -104,14 +109,7 @@ const Sidebar = () => {
                                 : 'text-white hover:bg-[#2D4A5B]'
                                 } transition-colors duration-200`}
                         >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                className="h-5 w-5 mr-3"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                                strokeWidth={1.5}
-                            >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
                             </svg>
                             <span>{item.text}</span>
@@ -124,21 +122,15 @@ const Sidebar = () => {
                 {/* Calendar */}
                 <div className="mx-3 p-4 bg-[#2D4A5B] rounded-xl mt-5 mb-5">
                     <h3 className="text-white font-medium mb-2">ปฏิทิน</h3>
-
-                    {/* Month and Year in Thai */}
                     <div className="text-center text-white mb-2">
                         <span className="font-medium">{calendar.thaiMonth} {calendar.thaiYear}</span>
                     </div>
-
                     <div className="text-xs text-center text-gray-300">
-                        {/* Weekday headers */}
                         <div className="grid grid-cols-7 gap-1 mb-1">
                             {thaiWeekdays.map((day, index) => (
                                 <div key={index} className="text-gray-400">{day}</div>
                             ))}
                         </div>
-
-                        {/* Calendar days */}
                         <div className="grid grid-cols-7 gap-1">
                             {calendar.days.map((day, index) => (
                                 <div
@@ -157,14 +149,12 @@ const Sidebar = () => {
             </div>
 
             {/* Sidebar desktop */}
-            <div className="hidden lg:flex lg:flex-col h-full justify-between lg:w-64 mt-5 overflow-y-scroll">
-                {/* Titile */}
+            <div className="hidden lg:flex lg:flex-col h-full justify-between lg:w-64 mt-5 overflow-y-auto">
                 <div className="mx-3 p-4 bg-[#203D4F] rounded-xl hidden xl:block mb-5">
                     <h2 className="text-white font-bold text-lg">สวัสดีคุณ</h2>
                     <p className="text-gray-400">{userData?.t_fullname}</p>
                 </div>
 
-                {/* Menu items */}
                 <nav className="mx-3 p-4 bg-[#203D4F] rounded-xl">
                     {menuItems.map((item) => (
                         <a
@@ -175,14 +165,7 @@ const Sidebar = () => {
                                 : 'text-white hover:bg-[#2D4A5B]'
                                 } transition-colors duration-200`}
                         >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                className="h-5 w-5 mr-3"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                                strokeWidth={1.5}
-                            >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
                             </svg>
                             <span>{item.text}</span>
@@ -190,24 +173,17 @@ const Sidebar = () => {
                     ))}
                 </nav>
 
-                {/* Calendar */}
                 <div className="mx-3 p-4 bg-[#203D4F] rounded-xl mb-5 mt-5">
                     <h3 className="text-white font-medium mb-2">ปฏิทิน</h3>
-
-                    {/* Month and Year in Thai */}
                     <div className="text-center text-white mb-2">
                         <span className="font-medium">{calendar.thaiMonth} {calendar.thaiYear}</span>
                     </div>
-
                     <div className="text-xs text-center text-gray-300">
-                        {/* Weekday headers */}
                         <div className="grid grid-cols-7 gap-1 mb-1">
                             {thaiWeekdays.map((day, index) => (
                                 <div key={index} className="text-gray-400">{day}</div>
                             ))}
                         </div>
-
-                        {/* Calendar days */}
                         <div className="grid grid-cols-7 gap-1">
                             {calendar.days.map((day, index) => (
                                 <div

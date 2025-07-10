@@ -1,9 +1,11 @@
+// app/action/media.ts
+
 'use server'
 import { createSupabaseServerClient } from "@/server/server";
 import { getUserData } from "./getuser";
 import { translateServerSupabaseErrorToThai } from "@/server/error";
 
-// Function to create new media
+// Create media
 async function createMedia(prevState: any, formData: any) {
     try {
         const supabase = await createSupabaseServerClient(); // Call Supabase
@@ -43,29 +45,24 @@ async function createMedia(prevState: any, formData: any) {
             .eq("m_tid", userData.t_id) // Check only for the current user's media
             .single();
             
-        // If a record is found, it's a duplicate
         if (mediaNameData) {
             return { title: "เกิดข้อผิดพลาด", message: "คุณมีสื่อการสอนชื่อนี้อยู่แล้ว", type: "error" };
         }
 
-        // A PostgREST error code 'PGRST116' means no rows were found, which is what we want. Any other error is a real problem.
         if (mediaNameError && mediaNameError.code !== 'PGRST116') {
-            return { title: "เกิดข้อผิดพลาด", message: mediaNameError.message, type: "error" };
+            return { title: "เกิดข้อผิดพลาด", message: await translateServerSupabaseErrorToThai(mediaNameError), type: "error" };
         }
 
         // ------------------------------------ Manage ------------------------------------
 
-        // Rename file;
         const fileExtension = media.name.split('.').pop();
         const fileNameNew = `${userData.t_id}/${Date.now()}.${fileExtension}`;
 
-        // Upload file to storage
         const { error: uploadError } = await supabase.storage
             .from("medias")
             .upload(fileNameNew, media);
-        if (uploadError) return { title: "เกิดข้อผิดพลาด", message: uploadError.message, type: "error" };
+        if (uploadError) return { title: "เกิดข้อผิดพลาด", message: await translateServerSupabaseErrorToThai(uploadError), type: "error" };
 
-        // Insert media data to database
         const { error: mediaError } = await supabase
             .from("medias")
             .insert({
@@ -80,7 +77,7 @@ async function createMedia(prevState: any, formData: any) {
             })
             .select()
             .single();
-        if (mediaError) return { title: "เกิดข้อผิดพลาด", message: mediaError.message, type: "error" };
+        if (mediaError) return { title: "เกิดข้อผิดพลาด", message: await translateServerSupabaseErrorToThai(mediaError), type: "error" };
 
         return { title: "สำเร็จ", message: "อัพโหลดสื่อเรียบร้อยแล้ว", type: "success" };
     } catch (error: any) {
@@ -89,20 +86,19 @@ async function createMedia(prevState: any, formData: any) {
     }
 }
 
-// Function to read media for the current user
+// Read media
 async function getMedia() {
     try {
-        const supabase = await createSupabaseServerClient(); // Call Supabase
+        const supabase = await createSupabaseServerClient();
         const userData = await getUserData();
         if (!userData) return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลผู้ใช้", type: "error" };
 
-        // Get media data
         const { data: mediaData, error: mediaError } = await supabase
             .from("medias")
             .select("*")
-            .eq("m_tid", userData.t_id) // Use t_id for better indexing
+            .eq("m_tid", userData.t_id)
             .order("m_id", { ascending: false });
-        if (mediaError) return { title: "เกิดข้อผิดพลาด", message: mediaError.message, type: "error" };
+        if (mediaError) return { title: "เกิดข้อผิดพลาด", message: await translateServerSupabaseErrorToThai(mediaError), type: "error" };
 
         return mediaData;
     } catch (error: any) {
@@ -111,7 +107,7 @@ async function getMedia() {
     }
 }
 
-// Function to get media data and their signed URLs for display
+// Get media data and their signed URLs for display
 async function getMediaWithSignedUrls() {
     try {
         const mediaDataResult = await getMedia();
@@ -130,7 +126,7 @@ async function getMediaWithSignedUrls() {
 
                 const { data, error } = await supabase.storage
                     .from('medias')
-                    .createSignedUrl(filePath, 3600); // URL valid for 1 hour
+                    .createSignedUrl(filePath, 3600);
 
                 if (error) {
                     console.error("Error creating signed URL for", filePath, error.message);
@@ -156,7 +152,7 @@ async function getMediaWithSignedUrls() {
     }
 }
 
-// Function to update existing media
+// Update media
 async function updateMedia(prevState: any, formData: FormData) {
     try {
         const supabase = await createSupabaseServerClient();
@@ -166,7 +162,6 @@ async function updateMedia(prevState: any, formData: FormData) {
         const newMediaFile = formData.get("m_media") as File | null;
         const newPeriod = formData.get("m_period") as string;
 
-        // ------------------------------------ Check State ------------------------------------
         if (!mediaId || !name || !description) {
             return { title: "เกิดข้อผิดพลาด", message: "ข้อมูลไม่ครบถ้วน", type: "error" };
         }
@@ -176,13 +171,12 @@ async function updateMedia(prevState: any, formData: FormData) {
             return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลผู้ใช้", type: "error" };
         }
 
-        // Check if the new name is a duplicate, excluding the current item
         const { data: duplicateData, error: duplicateError } = await supabase
             .from("medias")
             .select("m_id")
             .eq("m_name", name)
             .eq("m_tid", userData.t_id)
-            .neq("m_id", mediaId) // Important: Exclude the current media from the check
+            .neq("m_id", mediaId)
             .single();
 
         if (duplicateData) {
@@ -192,30 +186,27 @@ async function updateMedia(prevState: any, formData: FormData) {
              return { title: "เกิดข้อผิดพลาด", message: await translateServerSupabaseErrorToThai(duplicateError), type: "error" };
         }
 
-        // ------------------------------------ Manage State ------------------------------------
         const { data: existingMedia, error: existingMediaError } = await supabase
             .from("medias")
             .select("m_media")
             .eq("m_id", mediaId)
             .single();
-        
+
         if (existingMediaError || !existingMedia) {
-            return { title: "เกิดข้อผิดพลาด", message: "ไม่สามารถดึงข้อมูลไฟล์เดิมได้", type: "error" };
+            return { title: "เกิดข้อผิดพลาด", message: "ไม่สามารถดึงข้อมูลสื่อเดิมได้", type: "error" };
         }
 
         const updatePayload: any = {
             m_name: name,
-            m_media: {
-                ...existingMedia.m_media, // Preserve existing data
-                description: description
+            m_media: { 
+                ...existingMedia.m_media,
+                description: description 
             }
         };
 
-        // If a new file is uploaded, handle file replacement
         if (newMediaFile && newMediaFile.size > 0) {
-            const oldFilePath = existingMedia.m_media?.file_name;
-
-            // 1. Upload the new file
+            const oldFilePath = existingMedia.m_media.file_name;
+            
             const fileExtension = newMediaFile.name.split('.').pop();
             const newFileName = `${userData.t_id}/${Date.now()}.${fileExtension}`;
             const { error: uploadError } = await supabase.storage
@@ -226,11 +217,9 @@ async function updateMedia(prevState: any, formData: FormData) {
                 return { title: "เกิดข้อผิดพลาด", message: await translateServerSupabaseErrorToThai(uploadError), type: "error" };
             }
 
-            // 2. Update payload with new file info
             updatePayload.m_media.file_name = newFileName;
             updatePayload.m_period = newPeriod;
 
-            // 3. Delete the old file from storage (after new one is successfully uploaded)
             if (oldFilePath) {
                 const { error: deleteError } = await supabase.storage
                     .from("medias")
@@ -242,7 +231,6 @@ async function updateMedia(prevState: any, formData: FormData) {
             }
         }
 
-        // Perform the final update
         const { error: updateError } = await supabase
             .from("medias")
             .update(updatePayload)
@@ -259,9 +247,75 @@ async function updateMedia(prevState: any, formData: FormData) {
     }
 }
 
+// ** NEW FUNCTION **
+// Delete media
+async function deleteMedia(prevState: any, formData: FormData) {
+    try {
+        const supabase = await createSupabaseServerClient();
+        const mediaId = formData.get("m_id");
+
+        if (!mediaId) {
+            return { title: "เกิดข้อผิดพลาด", message: "ไม่พบรหัสของสื่อ", type: "error" };
+        }
+        
+        const userData = await getUserData();
+        if (!userData) {
+            return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลผู้ใช้", type: "error" };
+        }
+
+        // 1. Verify ownership and get file path
+        const { data: mediaToDelete, error: fetchError } = await supabase
+            .from("medias")
+            .select("m_media->>file_name, m_tid")
+            .eq("m_id", mediaId)
+            .single();
+
+        if (fetchError || !mediaToDelete) {
+            return { title: "เกิดข้อผิดพลาด", message: "ไม่พบสื่อที่ต้องการลบ", type: "error" };
+        }
+
+        // Security Check: Ensure the media belongs to the current user
+        if (mediaToDelete.m_tid !== userData.t_id) {
+            return { title: "ไม่มีสิทธิ์", message: "คุณไม่มีสิทธิ์ลบสื่อนี้", type: "error" };
+        }
+
+        // 2. Delete the database record first
+        const { error: deleteDbError } = await supabase
+            .from("medias")
+            .delete()
+            .eq("m_id", mediaId);
+
+        if (deleteDbError) {
+            return { title: "เกิดข้อผิดพลาด", message: await translateServerSupabaseErrorToThai(deleteDbError), type: "error" };
+        }
+
+        // 3. Delete the file from storage
+        const filePath = mediaToDelete.file_name;
+        if (filePath) {
+            const { error: deleteStorageError } = await supabase.storage
+                .from("medias")
+                .remove([filePath]);
+            
+            if (deleteStorageError) {
+                // Log a warning but don't fail the whole operation, as the DB record is already gone.
+                console.warn(`Failed to delete file ${filePath} from storage:`, deleteStorageError.message);
+                return { title: "ลบสำเร็จบางส่วน", message: "ลบข้อมูลสื่อสำเร็จ แต่เกิดปัญหาในการลบไฟล์ออกจากที่จัดเก็บ", type: "warning" };
+            }
+        }
+        
+        return { title: "สำเร็จ", message: "ลบสื่อการสอนเรียบร้อยแล้ว", type: "success" };
+
+    } catch (error: any) {
+        console.error("Error deleting media:", error.message);
+        return { title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์", message: error.message, type: "error" };
+    }
+}
+
+
 export {
     createMedia,
     getMedia,
     getMediaWithSignedUrls,
-    updateMedia
+    updateMedia,
+    deleteMedia, // Export the new function
 }
