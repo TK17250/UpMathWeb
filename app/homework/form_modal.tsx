@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { useFormStatus } from 'react-dom';
+import QuestionsPreviewModal from './questions_preview_modal';
 
 // Define the prop types for CreateHomeworkModal component
 interface CreateHomeworkModalProps {
@@ -11,17 +12,31 @@ interface CreateHomeworkModalProps {
 }
 
 // Submit button with loading state
-function SubmitButton() {
+function SubmitButton({ isGenerating, homeworkName, onValidationFailed }: { 
+    isGenerating: boolean;
+    homeworkName: string;
+    onValidationFailed: () => void;
+}) {
     const { pending } = useFormStatus();
+
+    const handleClick = (e: React.MouseEvent) => {
+        if (!homeworkName.trim()) {
+            e.preventDefault();
+            onValidationFailed();
+            alert('กรุณากรอกชื่อชุดฝึก');
+            return;
+        }
+    };
 
     return (
         <button
             type="submit"
-            disabled={pending}
-            className={`rounded-md bg-[#203D4F] px-6 md:px-10 py-1.5 text-sm/6 text-[#80ED99] font-bold shadow-xs cursor-pointer border-[#002D4A] border-2 hover:border-[#80ED99] transition-all duration-300 ${pending ? 'opacity-70 cursor-not-allowed' : ''
+            disabled={pending || isGenerating}
+            onClick={handleClick}
+            className={`rounded-md bg-[#203D4F] px-6 md:px-10 py-1.5 text-sm/6 text-[#80ED99] font-bold shadow-xs cursor-pointer border-[#002D4A] border-2 hover:border-[#80ED99] transition-all duration-300 ${(pending || isGenerating) ? 'opacity-70 cursor-not-allowed' : ''
                 }`}
         >
-            {pending ? 'กำลังบันทึก...' : 'สร้างชุดฝึก'}
+            {pending ? 'กำลังสร้างโจทย์...' : 'สร้างชุดฝึก'}
         </button>
     );
 }
@@ -33,12 +48,17 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
     const [level, setLevel] = useState('มัธยมศึกษาปีที่ 4');
     const [bloomtax, setBloomtax] = useState('จดจำ');
     const [exerciseType, setExerciseType] = useState('ปรนัย');
-    const [totalScore, setTotalScore] = useState('0');
+    const [totalQuestions, setTotalQuestions] = useState('10');
     const [content, setContent] = useState('');
     const formRef = useRef<HTMLFormElement>(null);
 
     // Animation states
     const [isExiting, setIsExiting] = useState<boolean>(false);
+    
+    // Questions preview modal state
+    const [showQuestionsPreview, setShowQuestionsPreview] = useState(false);
+    const [generatedQuestions, setGeneratedQuestions] = useState<any>(null);
+    const [isGenerating, setIsGenerating] = useState(false);
 
     // If close modal, reset the form
     useEffect(() => {
@@ -47,34 +67,33 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
         }
     }, [isOpen]);
 
-    // Handle form submission client-side validation
-    const handleClientValidation = (e: React.FormEvent) => {
-        if (!homeworkName.trim()) {
-            e.preventDefault();
-            alert('กรุณากรอกชื่อชุดฝึก');
-            return false;
+    // Handle action response
+    useEffect(() => {
+        // Check if we have an action result and we're currently generating
+        if (isGenerating && formAction && typeof formAction === 'function') {
+            // Reset generating state
+            setIsGenerating(false);
         }
+    }, [formAction, isGenerating]);
 
-        if (!content.trim()) {
-            e.preventDefault();
-            alert('กรุณากรอกคำอธิบาย');
-            return false;
-        }
-
-        const scoreNum = parseFloat(totalScore);
-        if (isNaN(scoreNum) || scoreNum <= 0) {
-            e.preventDefault();
-            alert('กรุณากรอกคะแนนรวมที่ถูกต้อง');
-            return false;
-        }
-
-        return true;
-    };
-
-    // Handle submit with animation
-    const handleSubmitWithAnimation = (e: React.FormEvent) => {
-        if (!handleClientValidation(e)) {
-            return;
+    // Handle questions save
+    const handleQuestionsSave = async (questionsData: any) => {
+        try {
+            // Call the actual form action to save to database
+            const formData = new FormData(formRef.current!);
+            formData.set('h_content', JSON.stringify(questionsData));
+            
+            const result = await formAction(null, formData);
+            
+            if (result && result.type === 'success') {
+                alert('บันทึกชุดฝึกเรียบร้อยแล้ว');
+                handleClose();
+            } else {
+                alert('เกิดข้อผิดพลาดในการบันทึก');
+            }
+        } catch (error) {
+            console.error('Error saving homework:', error);
+            alert('เกิดข้อผิดพลาดในการบันทึก');
         }
     };
 
@@ -85,8 +104,11 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
         setLevel('มัธยมศึกษาปีที่ 4');
         setBloomtax('จดจำ');
         setExerciseType('ปรนัย');
-        setTotalScore('0');
+        setTotalQuestions('10');
         setContent('');
+        setGeneratedQuestions(null);
+        setShowQuestionsPreview(false);
+        setIsGenerating(false);
         if (formRef.current) {
             formRef.current.reset();
         }
@@ -175,8 +197,14 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
                 <form
                     ref={formRef}
                     action={formAction}
-                    onSubmit={handleSubmitWithAnimation}
                 >
+                    {/* Hidden input for generate questions flag */}
+                    <input 
+                        type="hidden" 
+                        name="generate_questions" 
+                        value="true" 
+                    />
+                    
                     {/* Homework Name */}
                     <div className="mb-4">
                         <label htmlFor="homeworkName" className="block text-white mb-1">ชื่อชุดฝึก</label>
@@ -192,7 +220,28 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
                         />
                     </div>
 
-                    {/* Form row for level, subject detail, exercise type, and score */}
+                    {/* Subject */}
+                    <div className="mb-4">
+                        <label htmlFor="subject" className="block text-white mb-1">วิชา</label>
+                        <select
+                            id="subject"
+                            name="h_subject"
+                            value={subject}
+                            onChange={(e) => setSubject(e.target.value)}
+                            className="w-full px-4 py-2 rounded-md bg-[#203D4F] text-white border-2 border-[#002D4A] focus:outline-none focus:border-[#80ED99] transition-all duration-200"
+                            required
+                        >
+                            <option value="คณิตศาสตร์">คณิตศาสตร์</option>
+                            <option value="คณิตศาสตร์เพิ่มเติม">คณิตศาสตร์เพิ่มเติม</option>
+                            <option value="เลขคณิต">เลขคณิต</option>
+                            <option value="พีชคณิต">พีชคณิต</option>
+                            <option value="เรขาคณิต">เรขาคณิต</option>
+                            <option value="ตรีโกณมิติ">ตรีโกณมิติ</option>
+                            <option value="แคลคูลัส">แคลคูลัส</option>
+                        </select>
+                    </div>
+
+                    {/* Form row for level, bloom taxonomy, exercise type, total questions, and score */}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                         {/* Level */}
                         <div>
@@ -210,7 +259,7 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
                             </select>
                         </div>
 
-                        {/* Subject Detail */}
+                        {/* Bloom Taxonomy */}
                         <div>
                             <label htmlFor="subjectDetail" className="block text-white mb-1">ระดับขั้นของโจทย์</label>
                             <select
@@ -246,17 +295,16 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
                             </select>
                         </div>
 
-                        {/* Total Score */}
+                        {/* Total Questions */}
                         <div>
-                            <label htmlFor="totalScore" className="block text-white mb-1">คะแนนรวม (ไม่เกิน 30 คะแนน)</label>
+                            <label htmlFor="totalQuestions" className="block text-white mb-1">จำนวนข้อ</label>
                             <input
                                 type="number"
-                                id="totalScore"
-                                name="h_score"
-                                value={totalScore}
-                                onChange={(e) => setTotalScore(e.target.value)}
+                                id="totalQuestions"
+                                name="h_total_questions"
+                                value={totalQuestions}
+                                onChange={(e) => setTotalQuestions(e.target.value)}
                                 min="1"
-                                max="30"
                                 className="w-full px-4 py-2 rounded-md bg-[#203D4F] text-white border-2 border-[#002D4A] focus:outline-none focus:border-[#80ED99] transition-all duration-200"
                                 required
                             />
@@ -265,7 +313,9 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
 
                     {/* Content Description */}
                     <div className="mb-4">
-                        <label htmlFor="content" className="block text-white mb-1">คำอธิบาย (ไม่บังคับ)</label>
+                        <label htmlFor="content" className="block text-white mb-1">
+                            คำอธิบาย (ไม่บังคับ)
+                        </label>
                         <textarea
                             id="content"
                             name="h_content"
@@ -286,10 +336,22 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
                         >
                             ยกเลิก
                         </button>
-                        <SubmitButton />
+                        <SubmitButton 
+                            isGenerating={isGenerating} 
+                            homeworkName={homeworkName}
+                            onValidationFailed={() => setIsGenerating(false)}
+                        />
                     </div>
                 </form>
             </div>
+            
+            {/* Questions Preview Modal */}
+            <QuestionsPreviewModal
+                isOpen={showQuestionsPreview}
+                onClose={() => setShowQuestionsPreview(false)}
+                questionsData={generatedQuestions}
+                onSave={handleQuestionsSave}
+            />
         </div>
     );
 }

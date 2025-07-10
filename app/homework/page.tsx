@@ -7,8 +7,9 @@ import Sidebar from "@/app/component/sidebar";
 import Footer from "@/app/component/footer";
 import Alert1, { AlertType } from "../component/alert1"
 import CreateHomeworkModal from "./form_modal";
+import QuestionsPreviewModal from "./questions_preview_modal";
 import { createSwapy } from 'swapy'
-import { createHomework, getHomework } from "../action/homework";
+import { createHomework, getHomework, updateHomework } from "../action/homework";
 
 const Alert = {
     title: "",
@@ -20,6 +21,8 @@ export default function Homework() {
     const [user, setUser] = useState<any>(null);
     const [homeworkData, setHomeworkData] = useState<any>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isQuestionsModalOpen, setIsQuestionsModalOpen] = useState(false);
+    const [selectedHomework, setSelectedHomework] = useState<any>(null);
     const [action, formAction] = useActionState(createHomework, Alert);
 
     // Swapy
@@ -59,6 +62,15 @@ export default function Homework() {
         if (action && action.title && action.message && action.type && window.showAlert) {
             window.showAlert(action.title, action.message, action.type as AlertType);
             setIsModalOpen(false);
+            
+            // Refresh homework data if success
+            if (action.type === 'success') {
+                getHomework().then((res: any) => {
+                    if (res) {
+                        setHomeworkData(res);
+                    }
+                });
+            }
         }
     }, [action]);
 
@@ -80,6 +92,47 @@ export default function Homework() {
             console.error('Swapy initialization error:', error);
         }
     }, [homeworkData]);
+
+    // Handle homework click to view questions
+    const handleHomeworkClick = (homework: any) => {
+        setSelectedHomework(homework);
+        setIsQuestionsModalOpen(true);
+    };
+
+    // Handle questions save (for editing)
+    const handleQuestionsSave = async (questionsData: any) => {
+        try {
+            // Update homework in database
+            const result = await updateHomework(selectedHomework.h_id, questionsData);
+            
+            if (result.type === 'success') {
+                // Update local state
+                setHomeworkData((prev: any) => 
+                    prev.map((item: any) => 
+                        item.h_id === selectedHomework.h_id 
+                            ? { ...item, h_content: questionsData, h_score: questionsData.metadata.total_score }
+                            : item
+                    )
+                );
+                
+                setIsQuestionsModalOpen(false);
+                setSelectedHomework(null);
+                
+                if (window.showAlert) {
+                    window.showAlert('สำเร็จ', 'บันทึกการแก้ไขเรียบร้อยแล้ว', 'success' as AlertType);
+                }
+            } else {
+                if (window.showAlert) {
+                    window.showAlert('เกิดข้อผิดพลาด', result.message, 'error' as AlertType);
+                }
+            }
+        } catch (error) {
+            console.error('Error saving questions:', error);
+            if (window.showAlert) {
+                window.showAlert('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกการแก้ไขได้', 'error' as AlertType);
+            }
+        }
+    };
 
     return (
         <div className="h-screen flex flex-col overflow-hidden">
@@ -118,24 +171,28 @@ export default function Homework() {
                                             <div
                                                 data-swapy-item={index}
                                                 className="relative rounded-2xl p-4 transition-colors duration-300 overflow-hidden border-4 border-[#203D4F] cursor-pointer hover:border-[#80ED99] hover:text-[#80ED99] text-white bg-gradient-to-br from-[#203D4F] to-[#2D4A5B]"
+                                                onClick={() => handleHomeworkClick(item)}
                                             >
-                                                <div className="relative z-10 flex flex-col h-full min-h-[200px]">
-                                                    <div className="flex items-start justify-between mb-4">
-                                                        <h2 className="text-xl font-bold transition-all duration-300 line-clamp-2">{item.h_name}</h2>
+                                                <div className="relative z-10 flex flex-col h-full min-h-[150px]">
+                                                    <div className="flex items-start justify-between mb-2">
+                                                        <h2 className="text-xl font-bold transition-all duration-300 line-clamp-2">ชุดฝึก: {item.h_name}</h2>
                                                     </div>
                                                     <div className="flex-grow">
-                                                        <div className="mb-2">
-                                                            <span className="text-[#80ED99] text-sm font-semibold">เนื้อหา: </span>
-                                                            <span className="text-gray-300 text-sm">{item.h_subject}</span>
-                                                        </div>
-                                                        <div className="mb-2">
+                                                        <div className="">
                                                             <span className="text-[#80ED99] text-sm font-semibold">ประเภท: </span>
                                                             <span className="text-gray-300 text-sm">{item.h_type}</span>
                                                         </div>
-                                                        {item.h_content && (
-                                                            <p className="text-gray-300 text-sm line-clamp-2 mb-2">
-                                                                {item.h_content}
-                                                            </p>
+                                                        {item.h_content && item.h_content.metadata && (
+                                                            <div className="">
+                                                                <span className="text-[#80ED99] text-sm font-semibold">จำนวนข้อ: </span>
+                                                                <span className="text-gray-300 text-sm">{item.h_content.metadata.total_questions} ข้อ</span>
+                                                            </div>
+                                                        )}
+                                                        {item.h_content && item.h_content.metadata && (
+                                                            <div className="">
+                                                                <span className="text-[#80ED99] text-sm font-semibold">Bloom's: </span>
+                                                                <span className="text-gray-300 text-sm">{item.h_content.metadata.bloom_taxonomy}</span>
+                                                            </div>
                                                         )}
                                                     </div>
                                                     <div className="mt-auto">
@@ -168,6 +225,17 @@ export default function Homework() {
                         isOpen={isModalOpen}
                         onClose={() => setIsModalOpen(false)}
                         formAction={formAction}
+                    />
+
+                    {/* Questions Preview Modal */}
+                    <QuestionsPreviewModal
+                        isOpen={isQuestionsModalOpen}
+                        onClose={() => {
+                            setIsQuestionsModalOpen(false);
+                            setSelectedHomework(null);
+                        }}
+                        questionsData={selectedHomework?.h_content || null}
+                        onSave={handleQuestionsSave}
                     />
                 </div>
             )}
