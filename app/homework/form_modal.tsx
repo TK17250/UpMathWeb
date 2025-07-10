@@ -1,8 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
-import { useFormStatus } from 'react-dom';
-import { useActionState } from 'react';
 import QuestionsPreviewModal from './questions_preview_modal';
 
 // Define the prop types for CreateHomeworkModal component
@@ -13,51 +11,25 @@ interface CreateHomeworkModalProps {
 }
 
 // Submit button with loading state
-function SubmitButton({ isGenerating, homeworkName, onValidationFailed, selectedBloomTaxonomies, onStartGenerating }: { 
+function SubmitButton({ isGenerating, homeworkName, onValidationFailed, selectedBloomTaxonomies }: { 
     isGenerating: boolean;
     homeworkName: string;
     onValidationFailed: () => void;
     selectedBloomTaxonomies: string[];
-    onStartGenerating: () => void;
 }) {
-    const { pending } = useFormStatus();
-
-    const handleClick = (e: React.MouseEvent) => {
-        if (!homeworkName.trim()) {
-            e.preventDefault();
-            onValidationFailed();
-            alert('กรุณากรอกชื่อชุดฝึก');
-            return;
-        }
-        
-        if (selectedBloomTaxonomies.length === 0) {
-            e.preventDefault();
-            onValidationFailed();
-            alert('กรุณาเลือกระดับขั้นของโจทย์อย่างน้อย 1 ตัว');
-            return;
-        }
-
-        // Start generating process
-        onStartGenerating();
-    };
-
     return (
         <button
             type="submit"
-            disabled={pending || isGenerating}
-            onClick={handleClick}
-            className={`rounded-md bg-[#203D4F] px-6 md:px-10 py-1.5 text-sm/6 text-[#80ED99] font-bold shadow-xs cursor-pointer border-[#002D4A] border-2 hover:border-[#80ED99] transition-all duration-300 ${(pending || isGenerating) ? 'opacity-70 cursor-not-allowed' : ''
+            disabled={isGenerating}
+            className={`rounded-md bg-[#203D4F] px-6 md:px-10 py-1.5 text-sm/6 text-[#80ED99] font-bold shadow-xs cursor-pointer border-[#203D4F] border-2 hover:border-[#80ED99] transition-all duration-300 ${isGenerating ? 'opacity-70 cursor-not-allowed' : ''
                 }`}
         >
-            {pending ? 'กำลังสร้างโจทย์...' : 'สร้างชุดฝึก'}
+            {isGenerating ? 'กำลังสร้างโจทย์...' : 'สร้างชุดฝึก'}
         </button>
     );
 }
 
 export default function CreateHomeworkModal({ isOpen, onClose, formAction }: CreateHomeworkModalProps) {
-    // Use action state for form handling
-    const [state, formActionWithState] = useActionState(formAction, null);
-    
     // State for form inputs
     const [homeworkName, setHomeworkName] = useState('');
     const [subject, setSubject] = useState('คณิตศาสตร์');
@@ -120,6 +92,51 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
         setShowGeneratingBackdrop(true);
     };
 
+    // Handle form submission
+    const handleFormSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        
+        if (!homeworkName.trim()) {
+            alert('กรุณากรอกชื่อชุดฝึก');
+            return;
+        }
+        
+        if (selectedBloomTaxonomies.length === 0) {
+            alert('กรุณาเลือกระดับขั้นของโจทย์อย่างน้อย 1 ตัว');
+            return;
+        }
+
+        setIsGenerating(true);
+        setShowGeneratingBackdrop(true);
+
+        try {
+            const formData = new FormData(formRef.current!);
+            
+            // Call the form action
+            const result = await formAction(null, formData);
+            
+            setIsGenerating(false);
+            setShowGeneratingBackdrop(false);
+            
+            if (result && (result as any).type === 'success') {
+                if ((result as any).questionsData) {
+                    setGeneratedQuestions((result as any).questionsData);
+                    setShowQuestionsPreview(true);
+                } else {
+                    alert('สร้างและบันทึกชุดฝึกเรียบร้อยแล้ว');
+                    handleClose();
+                }
+            } else if (result && (result as any).type === 'error') {
+                alert((result as any).message);
+            }
+        } catch (error) {
+            console.error('Error submitting form:', error);
+            setIsGenerating(false);
+            setShowGeneratingBackdrop(false);
+            alert('เกิดข้อผิดพลาดในการส่งข้อมูล');
+        }
+    };
+
     // Handle modal close with animation
     const handleClose = () => {
         // Prevent closing if generating
@@ -143,27 +160,6 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
             resetForm();
         }
     }, [isOpen]);
-
-    // Handle action response
-    useEffect(() => {
-        if (state) {
-            setIsGenerating(false);
-            setShowGeneratingBackdrop(false);
-            
-            if ((state as any).type === 'success') {
-                if ((state as any).questionsData) {
-                    setGeneratedQuestions((state as any).questionsData);
-                    setShowQuestionsPreview(true);
-                } else {
-                    alert('สร้างและบันทึกชุดฝึกเรียบร้อยแล้ว');
-                    handleClose();
-                }
-            } else if ((state as any).type === 'error') {
-                alert((state as any).message);
-            }
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [state]);
 
     // Handle questions save
     const handleQuestionsSave = async (questionsData: any) => {
@@ -278,7 +274,7 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
 
                 <form
                     ref={formRef}
-                    action={formActionWithState}
+                    onSubmit={handleFormSubmit}
                 >
                     {/* Hidden input for generate questions flag */}
                     <input type="hidden" name="generate_questions" value="true" />
@@ -469,7 +465,6 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
                             homeworkName={homeworkName}
                             selectedBloomTaxonomies={selectedBloomTaxonomies}
                             onValidationFailed={() => setIsGenerating(false)}
-                            onStartGenerating={handleStartGenerating}
                         />
                     </div>
                 </form>

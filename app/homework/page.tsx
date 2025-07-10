@@ -1,6 +1,6 @@
 'use client';
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { getUser } from "@/app/action/getuser";
 import Navbar from "@/app/component/navbar";
 import Sidebar from "@/app/component/sidebar";
@@ -11,23 +11,33 @@ import QuestionsPreviewModal from "./questions_preview_modal";
 import { createSwapy } from 'swapy'
 import { createHomework, getHomework, updateHomework } from "../action/homework";
 
-const Alert = {
-    title: "",
-    message: "",
-    type: "",
-}
-
 export default function Homework() {
     const [user, setUser] = useState<any>(null);
     const [homeworkData, setHomeworkData] = useState<any>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isQuestionsModalOpen, setIsQuestionsModalOpen] = useState(false);
     const [selectedHomework, setSelectedHomework] = useState<any>(null);
-    const [action, formAction] = useActionState(createHomework, Alert);
 
     // Swapy
     const swapy = useRef(null) as any;
     const container = useRef(null)
+
+    // Handle homework creation
+    const handleCreateHomework = async (prevState: any, formData: FormData) => {
+        const result = await createHomework(prevState, formData);
+        
+        // If success, refresh homework data
+        if (result && result.type === 'success') {
+            getHomework().then((res: any) => {
+                if (res) {
+                    setHomeworkData(res);
+                }
+            });
+            setIsModalOpen(false);
+        }
+        
+        return result;
+    };
 
     // Check login
     const router = useRouter();
@@ -56,23 +66,6 @@ export default function Homework() {
             }
         })
     }, []);
-
-    // Show alert when action is completed
-    useEffect(() => {
-        if (action && action.title && action.message && action.type && window.showAlert) {
-            window.showAlert(action.title, action.message, action.type as AlertType);
-            setIsModalOpen(false);
-            
-            // Refresh homework data if success
-            if (action.type === 'success') {
-                getHomework().then((res: any) => {
-                    if (res) {
-                        setHomeworkData(res);
-                    }
-                });
-            }
-        }
-    }, [action]);
 
     // Initialize Swapy
     useEffect(() => {
@@ -224,7 +217,7 @@ export default function Homework() {
                     <CreateHomeworkModal 
                         isOpen={isModalOpen}
                         onClose={() => setIsModalOpen(false)}
-                        formAction={formAction}
+                        formAction={handleCreateHomework}
                     />
 
                     {/* Questions Preview Modal */}
