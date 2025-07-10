@@ -111,7 +111,7 @@ export default function Medias() {
     const renderMediaCards = () => {
         if (isLoading) {
             return (
-                <div className="absolute inset-0 flex justify-center items-center">
+                <div className="flex justify-center items-center h-full">
                     <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white"></div>
                 </div>
             );
@@ -119,7 +119,7 @@ export default function Medias() {
 
         if (mediaData.length === 0) {
             return (
-                <div className="absolute inset-0 flex justify-center items-center">
+                <div className="flex justify-center items-center h-full">
                     <div className="text-center p-4">
                         <PhotoIcon className="mx-auto h-16 w-16 text-white/30" />
                         <h3 className="mt-2 text-lg font-semibold text-white">ยังไม่มีสื่อการเรียนรู้</h3>
@@ -158,12 +158,12 @@ export default function Medias() {
                                         <EllipsisVerticalIcon className="h-6 w-6" />
                                     </button>
                                     {openMenuId === item.m_id && (
-                                        <div className="absolute top-full right-0 mt-2 w-36 bg-[#2D4A5B] border border-[#4A6B8A] rounded-lg shadow-xl z-20 animate-[zoomIn_150ms_ease-out]">
+                                        <div className="absolute top-0 right-10 mt-2 w-36 bg-[#2D4A5B] border border-[#4A6B8A] rounded-lg shadow-xl z-20 animate-[zoomIn_150ms_ease-out]">
                                             <ul className="py-1">
                                                 <li>
                                                     <button
                                                         onClick={() => handleEditClick(item)}
-                                                        className="w-full flex items-center px-4 py-2 text-sm text-white hover:bg-white/10"
+                                                        className="w-full flex items-center px-4 py-2 text-sm text-white hover:bg-white/10 cursor-pointer"
                                                     >
                                                         <PencilIcon className="h-4 w-4 mr-3" />
                                                         แก้ไข
@@ -172,7 +172,7 @@ export default function Medias() {
                                                 <li>
                                                     <button 
                                                         onClick={() => handleDeleteClick(item)}
-                                                        className="w-full flex items-center px-4 py-2 text-sm text-red-400 hover:bg-white/10"
+                                                        className="w-full flex items-center px-4 py-2 text-sm text-red-400 hover:bg-white/10 cursor-pointer"
                                                     >
                                                         <TrashIcon className="h-4 w-4 mr-3" />
                                                         ลบ
@@ -207,7 +207,7 @@ export default function Medias() {
                     <div className="flex flex-grow flex-col lg:flex-row overflow-hidden relative">
                         <Sidebar />
                         <div className="flex-grow lg:w-4/5 bg-[#2D4A5B] mt-5 mb-5 lg:mb-0 lg:ml-4 rounded-xl border-4 border-[#203D4F] p-3 md:p-5 overflow-y-auto relative">
-                             <div className="w-full flex flex-col sm:flex-row justify-between sm:items-center gap-4 sm:gap-2">
+                            <div className="w-full flex flex-col sm:flex-row justify-between sm:items-center gap-4 sm:gap-2">
                                 <h1 className="text-2xl font-bold text-white shrink-0">คลังสื่อการเรียนรู้</h1>
                                 <button
                                     className="w-full sm:w-auto text-white bg-[#203D4F] px-5 py-2 rounded-md cursor-pointer hover:bg-[#002D4A] hover:text-[#80ED99] ml-auto block shrink-0 transition-colors duration-300"
@@ -241,7 +241,7 @@ export default function Medias() {
                             onConfirm={handleConfirmDelete}
                             title="ยืนยันการลบสื่อ"
                             message={
-                                <span>คุณแน่ใจหรือไม่ว่าต้องการลบสื่อการสอน: <strong className="text-white">{deletingMediaItem.m_name}</strong>? การกระทำนี้ไม่สามารถย้อนกลับได้</span>
+                                <span className="text-gray-300">คุณแน่ใจหรือไม่ว่าต้องการลบสื่อการสอน: <strong className="text-white">{deletingMediaItem.m_name}</strong>? การกระทำนี้ไม่สามารถย้อนกลับได้</span>
                             }
                             confirmButtonText="ยืนยันการลบ"
                             cancelButtonText="ยกเลิก"
