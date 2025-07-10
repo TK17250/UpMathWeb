@@ -43,12 +43,41 @@ export default function QuestionsPreviewModal({
     const [editableData, setEditableData] = useState<QuestionsData | null>(null);
     const [activeTab, setActiveTab] = useState<'preview' | 'edit'>('preview');
     const [isExiting, setIsExiting] = useState(false);
+    const [expandedQuestions, setExpandedQuestions] = useState<Record<number, boolean>>({});
 
     useEffect(() => {
         if (questionsData) {
             setEditableData(JSON.parse(JSON.stringify(questionsData)));
+            // เปิดข้อแรกโดยอัตโนมัติ
+            const firstQuestionId = questionsData.questions[0]?.id;
+            if (firstQuestionId) {
+                setExpandedQuestions({ [firstQuestionId]: true });
+            }
         }
     }, [questionsData]);
+
+    // Toggle question expansion
+    const toggleQuestion = (questionId: number) => {
+        setExpandedQuestions(prev => ({
+            ...prev,
+            [questionId]: !prev[questionId]
+        }));
+    };
+
+    // Expand all questions
+    const expandAll = () => {
+        if (!editableData) return;
+        const allExpanded = editableData.questions.reduce((acc, q) => {
+            acc[q.id] = true;
+            return acc;
+        }, {} as Record<number, boolean>);
+        setExpandedQuestions(allExpanded);
+    };
+
+    // Collapse all questions
+    const collapseAll = () => {
+        setExpandedQuestions({});
+    };
 
     const handleClose = () => {
         setIsExiting(true);
@@ -211,6 +240,14 @@ export default function QuestionsPreviewModal({
                             {editableData.metadata.total_questions} ข้อ | &nbsp;
                             {editableData.metadata.total_score} คะแนน
                         </p>
+                        <div className="mt-2 px-3 py-1 bg-green-600/20 border border-green-500/30 rounded-md">
+                            <p className="text-green-400 text-sm flex items-center">
+                                <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                                ข้อมูลได้ถูกบันทึกลงฐานข้อมูลเรียบร้อยแล้ว
+                            </p>
+                        </div>
                     </div>
                     <button
                         onClick={handleClose}
@@ -221,141 +258,253 @@ export default function QuestionsPreviewModal({
                 </div>
 
                 {/* Tabs */}
-                <div className="flex border-b border-[#203D4F]">
-                    <button
-                        onClick={() => setActiveTab('preview')}
-                        className={`px-6 py-3 font-medium transition-colors ${
-                            activeTab === 'preview' 
-                                ? 'text-[#80ED99] border-b-2 border-[#80ED99]' 
-                                : 'text-gray-300 hover:text-white cursor-pointer'
-                        }`}
-                    >
-                        <DocumentTextIcon className="w-5 h-5 inline mr-2" />
-                        ดูโจทย์
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('edit')}
-                        className={`px-6 py-3 font-medium transition-colors ${
-                            activeTab === 'edit' 
-                                ? 'text-[#80ED99] border-b-2 border-[#80ED99]' 
-                                : 'text-gray-300 hover:text-white cursor-pointer'
-                        }`}
-                    >
-                        <AcademicCapIcon className="w-5 h-5 inline mr-2" />
-                        แก้ไข
-                    </button>
+                <div className="flex justify-between items-center border-b border-[#203D4F]">
+                    <div className="flex">
+                        <button
+                            onClick={() => setActiveTab('preview')}
+                            className={`px-6 py-3 font-medium transition-colors ${
+                                activeTab === 'preview' 
+                                    ? 'text-[#80ED99] border-b-2 border-[#80ED99]' 
+                                    : 'text-gray-300 hover:text-white cursor-pointer'
+                            }`}
+                        >
+                            <DocumentTextIcon className="w-5 h-5 inline mr-2" />
+                            ดูโจทย์
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('edit')}
+                            className={`px-6 py-3 font-medium transition-colors ${
+                                activeTab === 'edit' 
+                                    ? 'text-[#80ED99] border-b-2 border-[#80ED99]' 
+                                    : 'text-gray-300 hover:text-white cursor-pointer'
+                            }`}
+                        >
+                            <AcademicCapIcon className="w-5 h-5 inline mr-2" />
+                            แก้ไข
+                        </button>
+                    </div>
+                    
+                    {/* Expand/Collapse Controls */}
+                    <div className="flex space-x-2 px-4">
+                        <button
+                            onClick={expandAll}
+                            className="px-3 py-1 text-xs bg-[#80ED99] text-[#002D4A] rounded hover:bg-[#6ee085] transition-colors cursor-pointer"
+                        >
+                            เปิดทั้งหมด
+                        </button>
+                        <button
+                            onClick={collapseAll}
+                            className="px-3 py-1 text-xs bg-[#203D4F] text-white rounded hover:bg-[#152b3a] transition-colors cursor-pointer"
+                        >
+                            ปิดทั้งหมด
+                        </button>
+                    </div>
                 </div>
 
                 {/* Content */}
                 <div className="p-6 overflow-y-auto max-h-[calc(90vh-300px)]">
                     {activeTab === 'preview' ? (
-                        <div className="space-y-6">
-                            {editableData.questions.map((question, index) => (
-                                <div key={question.id} className="bg-[#203D4F] rounded-lg p-4">
-                                    <div className="flex justify-between items-start mb-3">
-                                        <h3 className="text-lg font-semibold text-white">
-                                            ข้อที่ {index + 1}
-                                        </h3>
-                                        <div className="flex items-center space-x-2">
-                                            <span className="text-sm text-gray-300">
-                                                {question.score} คะแนน
-                                            </span>
-                                            <span className="text-xs bg-[#80ED99] text-[#002D4A] px-2 py-1 rounded">
-                                                {question.difficulty}
+                        <div className="space-y-4">
+                            {editableData.questions.map((question, index) => {
+                                const isExpanded = expandedQuestions[question.id];
+                                return (
+                                    <div key={question.id} className="bg-[#203D4F] rounded-lg overflow-hidden">
+                                        {/* Question Header - Always Visible */}
+                                        <div 
+                                            className="flex justify-between items-center p-4 cursor-pointer hover:bg-[#2a4f63] transition-colors"
+                                            onClick={() => toggleQuestion(question.id)}
+                                        >
+                                            <div className="flex items-center space-x-3">
+                                                <div className="flex items-center space-x-2">
+                                                    <svg 
+                                                        className={`w-5 h-5 text-[#80ED99] transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} 
+                                                        fill="none" 
+                                                        stroke="currentColor" 
+                                                        viewBox="0 0 24 24"
+                                                    >
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                                    </svg>
+                                                    <h3 className="text-lg font-semibold text-white">
+                                                        ข้อที่ {index + 1}
+                                                    </h3>
+                                                </div>
+                                                <span className="text-sm text-gray-300 bg-[#2D4A5B] px-2 py-1 rounded">
+                                                    {question.score} คะแนน
+                                                </span>
+                                                <span className="text-xs bg-[#80ED99] text-[#002D4A] px-2 py-1 rounded">
+                                                    {question.difficulty}
+                                                </span>
+                                            </div>
+                                            
+                                            <span className="text-sm text-gray-400">
+                                                {isExpanded ? 'คลิกเพื่อปิด' : 'คลิกเพื่อดูรายละเอียด'}
                                             </span>
                                         </div>
-                                    </div>
-                                    
-                                    <div className="text-white mb-4">
-                                        <p className="mb-3">{question.question}</p>
                                         
-                                        {question.options && (
-                                            <div className="space-y-2">
-                                                {question.options.map((option, optIndex) => (
-                                                    <div 
-                                                        key={optIndex} 
-                                                        className={`p-2 rounded ${
-                                                            optIndex === question.correct_option_index 
-                                                                ? 'bg-green-600/20 border border-green-400' 
-                                                                : 'bg-[#2D4A5B] border border-[#002D4A]'
-                                                        }`}
-                                                    >
-                                                        {optIndex + 1}. {option}
+                                        {/* Question Content - Expandable */}
+                                        {isExpanded && (
+                                            <div className="px-4 pb-4 border-t border-[#2D4A5B]">
+                                                <div className="pt-4">
+                                                    <div className="text-white mb-4">
+                                                        <h4 className="text-sm font-medium text-[#80ED99] mb-2">โจทย์:</h4>
+                                                        <p className="mb-3 bg-[#2D4A5B] p-3 rounded">{question.question}</p>
+                                                        
+                                                        {question.options && (
+                                                            <div className="space-y-2 mb-4">
+                                                                <h4 className="text-sm font-medium text-[#80ED99] mb-2">ตัวเลือก:</h4>
+                                                                {question.options.map((option, optIndex) => (
+                                                                    <div 
+                                                                        key={optIndex} 
+                                                                        className={`p-2 rounded ${
+                                                                            optIndex === question.correct_option_index 
+                                                                                ? 'bg-green-600/20 border border-green-400' 
+                                                                                : 'bg-[#2D4A5B] border border-[#002D4A]'
+                                                                        }`}
+                                                                    >
+                                                                        {optIndex + 1}. {option}
+                                                                        {optIndex === question.correct_option_index && (
+                                                                            <span className="ml-2 text-xs text-green-400">✓ คำตอบที่ถูก</span>
+                                                                        )}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                ))}
+
+                                                    <div className="border-t border-[#002D4A] pt-3">
+                                                        <h4 className="text-sm font-medium text-[#80ED99] mb-2">คำตอบ:</h4>
+                                                        <p className="text-green-300 text-sm mb-3 bg-[#2D4A5B] p-2 rounded">{question.correct_answer}</p>
+                                                        <h4 className="text-sm font-medium text-[#80ED99] mb-2">วิธีทำ:</h4>
+                                                        <p className="text-gray-300 text-sm bg-[#2D4A5B] p-3 rounded leading-relaxed">{question.explanation}</p>
+                                                    </div>
+                                                </div>
                                             </div>
                                         )}
                                     </div>
-
-                                    <div className="border-t border-[#002D4A] pt-3">
-                                        <h4 className="text-sm font-medium text-[#80ED99] mb-2">คำตอบ:</h4>
-                                        <p className="text-green-300 text-sm mb-2">{question.correct_answer}</p>
-                                        <h4 className="text-sm font-medium text-[#80ED99] mb-2">วิธีทำ:</h4>
-                                        <p className="text-gray-300 text-sm">{question.explanation}</p>
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     ) : (
-                        <div className="space-y-6">
-                            {editableData.questions.map((question, index) => (
-                                <div key={question.id} className="bg-[#203D4F] rounded-lg p-4">
-                                    <div className="flex justify-between items-start mb-3">
-                                        <h3 className="text-lg font-semibold text-white">
-                                            ข้อที่ {index + 1}
-                                        </h3>
-                                        <div className="flex items-center space-x-2">
-                                            <input
-                                                type="number"
-                                                step="0.1"
-                                                min="0"
-                                                value={question.score}
-                                                onChange={(e) => updateQuestionScore(question.id, parseFloat(e.target.value) || 0)}
-                                                className="w-16 px-2 py-1 text-sm bg-[#2D4A5B] text-white rounded border border-[#002D4A] focus:border-[#80ED99]"
-                                            />
-                                            <span className="text-sm text-gray-300">คะแนน</span>
+                        <div className="space-y-4">
+                            {editableData.questions.map((question, index) => {
+                                const isExpanded = expandedQuestions[question.id];
+                                return (
+                                    <div key={question.id} className="bg-[#203D4F] rounded-lg overflow-hidden">
+                                        {/* Question Header - Always Visible */}
+                                        <div 
+                                            className="flex justify-between items-center p-4 cursor-pointer hover:bg-[#2a4f63] transition-colors"
+                                            onClick={() => toggleQuestion(question.id)}
+                                        >
+                                            <div className="flex items-center space-x-3">
+                                                <div className="flex items-center space-x-2">
+                                                    <svg 
+                                                        className={`w-5 h-5 text-[#80ED99] transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} 
+                                                        fill="none" 
+                                                        stroke="currentColor" 
+                                                        viewBox="0 0 24 24"
+                                                    >
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                                    </svg>
+                                                    <h3 className="text-lg font-semibold text-white">
+                                                        ข้อที่ {index + 1}
+                                                    </h3>
+                                                </div>
+                                                <div className="flex items-center space-x-2">
+                                                    <input
+                                                        type="number"
+                                                        step="0.1"
+                                                        min="0"
+                                                        value={question.score}
+                                                        onChange={(e) => updateQuestionScore(question.id, parseFloat(e.target.value) || 0)}
+                                                        className="w-16 px-2 py-1 text-sm bg-[#2D4A5B] text-white rounded border border-[#002D4A] focus:border-[#80ED99]"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    />
+                                                    <span className="text-sm text-gray-300">คะแนน</span>
+                                                </div>
+                                            </div>
+                                            
+                                            <span className="text-sm text-gray-400">
+                                                {isExpanded ? 'คลิกเพื่อปิด' : 'คลิกเพื่อแก้ไข'}
+                                            </span>
                                         </div>
-                                    </div>
-                                    
-                                    <div className="space-y-3">
-                                        <div>
-                                            <label className="block text-sm font-medium text-[#80ED99] mb-1">
-                                                โจทย์
-                                            </label>
-                                            <textarea
-                                                value={question.question}
-                                                onChange={(e) => updateQuestionContent(question.id, 'question', e.target.value)}
-                                                className="w-full px-3 py-2 bg-[#2D4A5B] text-white rounded border border-[#002D4A] focus:border-[#80ED99] resize-none"
-                                                rows={3}
-                                            />
-                                        </div>
+                                        
+                                        {/* Edit Form - Expandable */}
+                                        {isExpanded && (
+                                            <div className="px-4 pb-4 border-t border-[#2D4A5B]">
+                                                <div className="pt-4 space-y-4">
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-[#80ED99] mb-2">
+                                                            โจทย์
+                                                        </label>
+                                                        <textarea
+                                                            value={question.question}
+                                                            onChange={(e) => updateQuestionContent(question.id, 'question', e.target.value)}
+                                                            className="w-full px-3 py-2 bg-[#2D4A5B] text-white rounded border border-[#002D4A] focus:border-[#80ED99] resize-none"
+                                                            rows={4}
+                                                        />
+                                                    </div>
 
-                                        <div>
-                                            <label className="block text-sm font-medium text-[#80ED99] mb-1">
-                                                คำตอบ
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={question.correct_answer}
-                                                onChange={(e) => updateQuestionContent(question.id, 'correct_answer', e.target.value)}
-                                                className="w-full px-3 py-2 bg-[#2D4A5B] text-white rounded border border-[#002D4A] focus:border-[#80ED99]"
-                                            />
-                                        </div>
+                                                    {question.options && (
+                                                        <div>
+                                                            <label className="block text-sm font-medium text-[#80ED99] mb-2">
+                                                                ตัวเลือก
+                                                            </label>
+                                                            <div className="space-y-2">
+                                                                {question.options.map((option, optIndex) => (
+                                                                    <div key={optIndex} className="flex items-center space-x-2">
+                                                                        <span className="text-white text-sm w-6">{optIndex + 1}.</span>
+                                                                        <input
+                                                                            type="text"
+                                                                            value={option}
+                                                                            onChange={(e) => {
+                                                                                const newOptions = [...question.options!];
+                                                                                newOptions[optIndex] = e.target.value;
+                                                                                updateQuestionContent(question.id, 'options', newOptions);
+                                                                            }}
+                                                                            className={`flex-1 px-3 py-2 text-white rounded border focus:border-[#80ED99] ${
+                                                                                optIndex === question.correct_option_index 
+                                                                                    ? 'bg-green-600/20 border-green-400' 
+                                                                                    : 'bg-[#2D4A5B] border-[#002D4A]'
+                                                                            }`}
+                                                                        />
+                                                                        {optIndex === question.correct_option_index && (
+                                                                            <span className="text-green-400 text-sm">✓</span>
+                                                                        )}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
 
-                                        <div>
-                                            <label className="block text-sm font-medium text-[#80ED99] mb-1">
-                                                วิธีทำ
-                                            </label>
-                                            <textarea
-                                                value={question.explanation}
-                                                onChange={(e) => updateQuestionContent(question.id, 'explanation', e.target.value)}
-                                                className="w-full px-3 py-2 bg-[#2D4A5B] text-white rounded border border-[#002D4A] focus:border-[#80ED99] resize-none"
-                                                rows={2}
-                                            />
-                                        </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-[#80ED99] mb-2">
+                                                            คำตอบ
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            value={question.correct_answer}
+                                                            onChange={(e) => updateQuestionContent(question.id, 'correct_answer', e.target.value)}
+                                                            className="w-full px-3 py-2 bg-[#2D4A5B] text-white rounded border border-[#002D4A] focus:border-[#80ED99]"
+                                                        />
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-[#80ED99] mb-2">
+                                                            วิธีทำ
+                                                        </label>
+                                                        <textarea
+                                                            value={question.explanation}
+                                                            onChange={(e) => updateQuestionContent(question.id, 'explanation', e.target.value)}
+                                                            className="w-full px-3 py-2 bg-[#2D4A5B] text-white rounded border border-[#002D4A] focus:border-[#80ED99] resize-none"
+                                                            rows={3}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </div>
@@ -363,7 +512,12 @@ export default function QuestionsPreviewModal({
                 {/* Footer */}
                 <div className="lg:flex items-center justify-between p-6 border-t border-[#203D4F] overflow-y-scroll md:overflow-y-auto">
                     <div className="text-sm text-gray-300 lg:mb-0 mb-4">
-                        คะแนนรวม: {editableData.metadata.total_score} คะแนน
+                        <div className="flex items-center space-x-4">
+                            <span>คะแนนรวม: {editableData.metadata.total_score} คะแนน</span>
+                            <span className="text-[#80ED99]">
+                                เปิดแล้ว: {Object.values(expandedQuestions).filter(Boolean).length}/{editableData.questions.length} ข้อ
+                            </span>
+                        </div>
                     </div>
                     <div className="md:flex space-x-3">
                         <button
@@ -388,7 +542,7 @@ export default function QuestionsPreviewModal({
                             onClick={handleSave}
                             className="px-4 py-2 bg-[#80ED99] text-[#002D4A] rounded-md hover:bg-[#6ee085] transition-colors font-medium cursor-pointer"
                         >
-                            บันทึกการแก้ไข
+                            ยืนยันและปิด
                         </button>
                     </div>
                 </div>

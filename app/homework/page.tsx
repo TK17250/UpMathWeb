@@ -26,17 +26,20 @@ export default function Homework() {
     const handleCreateHomework = async (prevState: any, formData: FormData) => {
         const result = await createHomework(prevState, formData);
         
-        // If success, refresh homework data
-        if (result && result.type === 'success') {
-            getHomework().then((res: any) => {
-                if (res) {
-                    setHomeworkData(res);
-                }
-            });
-            setIsModalOpen(false);
-        }
+        // Don't automatically close modal here since preview will handle it
+        // Refresh data will be handled by the modal's onSaveSuccess callback
         
         return result;
+    };
+
+    // Function to refresh homework data (can be called from modal)
+    const refreshHomeworkData = () => {
+        getHomework().then((res: any) => {
+            if (res) {
+                setHomeworkData(res);
+            }
+        });
+        setIsModalOpen(false); // Close modal after refresh
     };
 
     // Check login
@@ -218,6 +221,7 @@ export default function Homework() {
                         isOpen={isModalOpen}
                         onClose={() => setIsModalOpen(false)}
                         formAction={handleCreateHomework}
+                        onSaveSuccess={refreshHomeworkData}
                     />
 
                     {/* Questions Preview Modal */}
