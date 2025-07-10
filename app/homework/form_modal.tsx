@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { useFormStatus } from 'react-dom';
+import { useActionState } from 'react';
 import QuestionsPreviewModal from './questions_preview_modal';
 
 // Define the prop types for CreateHomeworkModal component
@@ -12,10 +13,12 @@ interface CreateHomeworkModalProps {
 }
 
 // Submit button with loading state
-function SubmitButton({ isGenerating, homeworkName, onValidationFailed }: { 
+function SubmitButton({ isGenerating, homeworkName, onValidationFailed, selectedBloomTaxonomies, onStartGenerating }: { 
     isGenerating: boolean;
     homeworkName: string;
     onValidationFailed: () => void;
+    selectedBloomTaxonomies: string[];
+    onStartGenerating: () => void;
 }) {
     const { pending } = useFormStatus();
 
@@ -26,6 +29,16 @@ function SubmitButton({ isGenerating, homeworkName, onValidationFailed }: {
             alert('กรุณากรอกชื่อชุดฝึก');
             return;
         }
+        
+        if (selectedBloomTaxonomies.length === 0) {
+            e.preventDefault();
+            onValidationFailed();
+            alert('กรุณาเลือกระดับขั้นของโจทย์อย่างน้อย 1 ตัว');
+            return;
+        }
+
+        // Start generating process
+        onStartGenerating();
     };
 
     return (
@@ -42,11 +55,15 @@ function SubmitButton({ isGenerating, homeworkName, onValidationFailed }: {
 }
 
 export default function CreateHomeworkModal({ isOpen, onClose, formAction }: CreateHomeworkModalProps) {
+    // Use action state for form handling
+    const [state, formActionWithState] = useActionState(formAction, null);
+    
     // State for form inputs
     const [homeworkName, setHomeworkName] = useState('');
     const [subject, setSubject] = useState('คณิตศาสตร์');
     const [level, setLevel] = useState('มัธยมศึกษาปีที่ 4');
     const [bloomtax, setBloomtax] = useState('จดจำ');
+    const [selectedBloomTaxonomies, setSelectedBloomTaxonomies] = useState<string[]>(['จดจำ']);
     const [exerciseType, setExerciseType] = useState('ปรนัย');
     const [totalQuestions, setTotalQuestions] = useState('10');
     const [content, setContent] = useState('');
@@ -59,6 +76,66 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
     const [showQuestionsPreview, setShowQuestionsPreview] = useState(false);
     const [generatedQuestions, setGeneratedQuestions] = useState<any>(null);
     const [isGenerating, setIsGenerating] = useState(false);
+    const [showGeneratingBackdrop, setShowGeneratingBackdrop] = useState(false);
+
+    // Available Bloom's Taxonomy options
+    const allBloomTaxonomies = ['จดจำ', 'เข้าใจ', 'ประยุกต์', 'วิเคราะห์', 'ประเมิน', 'สร้างสรรค์'];
+    
+    // Get available options (not yet selected)
+    const availableBloomTaxonomies = allBloomTaxonomies.filter(
+        taxonomy => !selectedBloomTaxonomies.includes(taxonomy)
+    );
+
+    // Handle adding Bloom's Taxonomy
+    const handleAddBloomTaxonomy = () => {
+        if (bloomtax && !selectedBloomTaxonomies.includes(bloomtax)) {
+            setSelectedBloomTaxonomies([...selectedBloomTaxonomies, bloomtax]);
+            // Set to first available option or empty
+            const nextAvailable = availableBloomTaxonomies.find(t => t !== bloomtax);
+            setBloomtax(nextAvailable || '');
+        }
+    };
+
+    // Handle removing Bloom's Taxonomy
+    const handleRemoveBloomTaxonomy = (taxonomyToRemove: string) => {
+        const updated = selectedBloomTaxonomies.filter(t => t !== taxonomyToRemove);
+        setSelectedBloomTaxonomies(updated);
+        // If no taxonomy is selected in dropdown, set it to the removed one
+        if (!bloomtax) {
+            setBloomtax(taxonomyToRemove);
+        }
+    };
+
+    // Handle cancel generation
+    const handleCancelGeneration = () => {
+        setIsGenerating(false);
+        setShowGeneratingBackdrop(false);
+        // You might want to add logic to actually cancel the API request here
+    };
+
+    // Handle start generating
+    const handleStartGenerating = () => {
+        console.log('Starting generation...'); // Debug log
+        setIsGenerating(true);
+        setShowGeneratingBackdrop(true);
+    };
+
+    // Handle modal close with animation
+    const handleClose = () => {
+        // Prevent closing if generating
+        if (isGenerating) {
+            return;
+        }
+        
+        setIsExiting(true);
+
+        // Wait for exit animation to complete
+        setTimeout(() => {
+            onClose();
+            resetForm();
+            setIsExiting(false);
+        }, 300);
+    };
 
     // If close modal, reset the form
     useEffect(() => {
@@ -69,12 +146,24 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
 
     // Handle action response
     useEffect(() => {
-        // Check if we have an action result and we're currently generating
-        if (isGenerating && formAction && typeof formAction === 'function') {
-            // Reset generating state
+        if (state) {
             setIsGenerating(false);
+            setShowGeneratingBackdrop(false);
+            
+            if ((state as any).type === 'success') {
+                if ((state as any).questionsData) {
+                    setGeneratedQuestions((state as any).questionsData);
+                    setShowQuestionsPreview(true);
+                } else {
+                    alert('สร้างและบันทึกชุดฝึกเรียบร้อยแล้ว');
+                    handleClose();
+                }
+            } else if ((state as any).type === 'error') {
+                alert((state as any).message);
+            }
         }
-    }, [formAction, isGenerating]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [state]);
 
     // Handle questions save
     const handleQuestionsSave = async (questionsData: any) => {
@@ -85,7 +174,7 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
             
             const result = await formAction(null, formData);
             
-            if (result && result.type === 'success') {
+            if (result && (result as any).type === 'success') {
                 alert('บันทึกชุดฝึกเรียบร้อยแล้ว');
                 handleClose();
             } else {
@@ -103,27 +192,17 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
         setSubject('คณิตศาสตร์');
         setLevel('มัธยมศึกษาปีที่ 4');
         setBloomtax('จดจำ');
+        setSelectedBloomTaxonomies(['จดจำ']);
         setExerciseType('ปรนัย');
         setTotalQuestions('10');
         setContent('');
         setGeneratedQuestions(null);
         setShowQuestionsPreview(false);
         setIsGenerating(false);
+        setShowGeneratingBackdrop(false);
         if (formRef.current) {
             formRef.current.reset();
         }
-    };
-
-    // Handle modal close with animation
-    const handleClose = () => {
-        setIsExiting(true);
-
-        // Wait for exit animation to complete
-        setTimeout(() => {
-            onClose();
-            resetForm();
-            setIsExiting(false);
-        }, 300);
     };
 
     // If modal is not open, don't render anything
@@ -170,7 +249,7 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
                     ? 'animate-[fadeOut_300ms_ease-in-out_forwards]'
                     : 'animate-[fadeIn_300ms_ease-in-out_forwards]'
                     }`}
-                onClick={handleClose}
+                onClick={isGenerating ? undefined : handleClose}
             ></div>
 
             {/* Modal Content */}
@@ -185,7 +264,10 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
                     <button
                         type="button"
                         onClick={handleClose}
-                        className="rounded-md bg-[#2D4A5B] text-white hover:text-gray-300 focus:outline-hidden cursor-pointer transition-all duration-300 outline-none"
+                        disabled={isGenerating}
+                        className={`rounded-md bg-[#2D4A5B] text-white hover:text-gray-300 focus:outline-hidden transition-all duration-300 outline-none ${
+                            isGenerating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                        }`}
                     >
                         <span className="sr-only">ปิด</span>
                         <XMarkIcon aria-hidden="true" className="size-6" />
@@ -196,14 +278,10 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
 
                 <form
                     ref={formRef}
-                    action={formAction}
+                    action={formActionWithState}
                 >
                     {/* Hidden input for generate questions flag */}
-                    <input 
-                        type="hidden" 
-                        name="generate_questions" 
-                        value="true" 
-                    />
+                    <input type="hidden" name="generate_questions" value="true" />
                     
                     {/* Homework Name */}
                     <div className="mb-4">
@@ -221,9 +299,9 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
                     </div>
 
                     {/* Subject */}
-                    <div className="mb-4">
-                        <label htmlFor="subject" className="block text-white mb-1">วิชา</label>
-                        <select
+                    <div className="mb-4 opacity-70">
+                        <label htmlFor="subject" className="block text-white mb-1">เนื้อหา (ปัจจุบันมีแค่ พีชคณิต)</label>
+                        {/* <select
                             id="subject"
                             name="h_subject"
                             value={subject}
@@ -238,11 +316,22 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
                             <option value="เรขาคณิต">เรขาคณิต</option>
                             <option value="ตรีโกณมิติ">ตรีโกณมิติ</option>
                             <option value="แคลคูลัส">แคลคูลัส</option>
-                        </select>
+                        </select> */}
+
+                        <input
+                            id="subject"
+                            name="h_subject"
+                            type="text"
+                            required
+                            autoComplete="off"
+                            className="w-full px-4 py-2 rounded-md bg-[#002c4a5b] text-[#9f9f9f] border-2 border-[#002c4a5b] focus:outline-none focus:border-[#80ED99] transition-all duration-200"
+                            value="พีชคณิต"
+                            disabled
+                        />
                     </div>
 
-                    {/* Form row for level, bloom taxonomy, exercise type, total questions, and score */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                    {/* Form row for level, exercise type, and total questions */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                         {/* Level */}
                         <div>
                             <label htmlFor="level" className="block text-white mb-1">ระดับ</label>
@@ -259,40 +348,19 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
                             </select>
                         </div>
 
-                        {/* Bloom Taxonomy */}
-                        <div>
-                            <label htmlFor="subjectDetail" className="block text-white mb-1">ระดับขั้นของโจทย์</label>
-                            <select
-                                id="subjectDetail"
-                                name="h_bloomtax"
-                                value={bloomtax}
-                                onChange={(e) => setBloomtax(e.target.value)}
-                                className="w-full px-4 py-2 rounded-md bg-[#203D4F] text-white border-2 border-[#002D4A] focus:outline-none focus:border-[#80ED99] transition-all duration-200"
-                            >
-                                <option value="จดจำ">จดจำ</option>
-                                <option value="เข้าใจ">เข้าใจ</option>
-                                <option value="ประยุกต์">ประยุกต์</option>
-                                <option value="วิเคราะห์">วิเคราะห์</option>
-                                <option value="สังเคราะห์">สังเคราะห์</option>
-                                <option value="ประเมิน">ประเมิน</option>
-                            </select>
-                        </div>
-
                         {/* Exercise Type */}
-                        <div>
-                            <label htmlFor="exerciseType" className="block text-white mb-1">รูปแบบ</label>
-                            <select
+                        <div className='opacity-70'>
+                            <label htmlFor="exerciseType" className="block text-white mb-1">รูปแบบ (ปัจจุบันมีแค่ ปรนัย)</label>
+                            <input
                                 id="exerciseType"
                                 name="h_type"
-                                value={exerciseType}
-                                onChange={(e) => setExerciseType(e.target.value)}
-                                className="w-full px-4 py-2 rounded-md bg-[#203D4F] text-white border-2 border-[#002D4A] focus:outline-none focus:border-[#80ED99] transition-all duration-200"
+                                type="text"
                                 required
-                            >
-                                <option value="ปรนัย">ปรนัย</option>
-                                <option value="อัตนัย">อัตนัย</option>
-                                <option value="ทั้งคู่">ทั้งคู่</option>
-                            </select>
+                                autoComplete="off"
+                                className="w-full px-4 py-2 rounded-md bg-[#002c4a5b] text-[#9f9f9f] border-2 border-[#002c4a5b] focus:outline-none focus:border-[#80ED99] transition-all duration-200"
+                                value="ปรนัย"
+                                disabled
+                            />
                         </div>
 
                         {/* Total Questions */}
@@ -309,6 +377,63 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
                                 required
                             />
                         </div>
+                    </div>
+
+                    {/* Bloom Taxonomy - Full Width */}
+                    <div className="mb-4">
+                        <label htmlFor="subjectDetail" className="block text-white mb-1">ระดับขั้นของโจทย์</label>
+                        
+                        {/* Selection Area */}
+                        <div className="flex gap-2 mb-2">
+                            <select
+                                id="subjectDetail"
+                                value={bloomtax}
+                                onChange={(e) => setBloomtax(e.target.value)}
+                                className="flex-1 px-4 py-2 rounded-md bg-[#203D4F] text-white border-2 border-[#002D4A] focus:outline-none focus:border-[#80ED99] transition-all duration-200"
+                                disabled={availableBloomTaxonomies.length === 0}
+                            >
+                                <option value="">เลือกระดับขั้น</option>
+                                {availableBloomTaxonomies.map(taxonomy => (
+                                    <option key={taxonomy} value={taxonomy}>{taxonomy}</option>
+                                ))}
+                            </select>
+                            <button
+                                type="button"
+                                onClick={handleAddBloomTaxonomy}
+                                disabled={!bloomtax || selectedBloomTaxonomies.includes(bloomtax)}
+                                className="px-4 py-2 bg-[#80ED99] text-[#002D4A] rounded-md hover:bg-[#6dd087] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed font-medium cursor-pointer"
+                            >
+                                เพิ่ม
+                            </button>
+                        </div>
+
+                        {/* Selected Taxonomies */}
+                        {selectedBloomTaxonomies.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                                {selectedBloomTaxonomies.map(taxonomy => (
+                                    <div
+                                        key={taxonomy}
+                                        className="flex items-center gap-2 px-3 py-1 bg-[#80ED99] text-[#002D4A] rounded-full text-sm font-medium"
+                                    >
+                                        <span>{taxonomy}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRemoveBloomTaxonomy(taxonomy)}
+                                            className="text-[#002D4A] hover:text-red-600 transition-colors duration-200 cursor-pointer"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        
+                        {/* Hidden input for form submission */}
+                        <input
+                            type="hidden"
+                            name="h_bloomtax"
+                            value={selectedBloomTaxonomies.join(',')}
+                        />
                     </div>
 
                     {/* Content Description */}
@@ -332,14 +457,19 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
                         <button
                             type="button"
                             onClick={handleClose}
-                            className="px-4 py-2 bg-[#203D4F] text-white rounded-md hover:bg-[#152b3a] transition-all duration-300 cursor-pointer"
+                            disabled={isGenerating}
+                            className={`px-4 py-2 bg-[#203D4F] text-white rounded-md hover:bg-[#152b3a] transition-all duration-300 ${
+                                isGenerating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                            }`}
                         >
                             ยกเลิก
                         </button>
                         <SubmitButton 
                             isGenerating={isGenerating} 
                             homeworkName={homeworkName}
+                            selectedBloomTaxonomies={selectedBloomTaxonomies}
                             onValidationFailed={() => setIsGenerating(false)}
+                            onStartGenerating={handleStartGenerating}
                         />
                     </div>
                 </form>
@@ -352,6 +482,47 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction }: Cre
                 questionsData={generatedQuestions}
                 onSave={handleQuestionsSave}
             />
+
+            {/* Generating Backdrop */}
+            {showGeneratingBackdrop && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center">
+                    {/* Backdrop */}
+                    <div className="fixed inset-0 bg-black/70 animate-[fadeIn_300ms_ease-in-out_forwards]"></div>
+                    
+                    {/* Warning Modal */}
+                    <div className="relative bg-[#2D4A5B] rounded-xl p-8 max-w-md w-11/12 animate-[zoomIn_300ms_cubic-bezier(0.175,0.885,0.32,1.275)_forwards] transform-gpu">
+                        <div className="text-center">
+                            {/* Warning Icon */}
+                            <div className="mx-auto mb-4 w-12 h-12 rounded-full bg-yellow-500/20 flex items-center justify-center">
+                                <svg className="w-6 h-6 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                                </svg>
+                            </div>
+                            
+                            <h3 className="text-xl font-bold text-white mb-2">⚠️ ระบบกำลังสร้างชุดฝึก</h3>
+                            <p className="text-gray-300 mb-6 text-sm leading-relaxed">
+                                กรุณาอย่าปิดหน้าต่างหรือรีเฟรชหน้าเว็บ<br />
+                                ระบบกำลังสร้างโจทย์ด้วย AI<br />
+                                กระบวนการนี้อาจใช้เวลา 30-60 วินาที
+                            </p>
+                            
+                            {/* Loading Animation */}
+                            <div className="mb-6">
+                                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#80ED99]"></div>
+                            </div>
+                            
+                            {/* Cancel Button */}
+                            <button
+                                type="button"
+                                onClick={handleCancelGeneration}
+                                className="px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-all duration-200 font-medium"
+                            >
+                                ยกเลิกการสร้าง
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -227,7 +227,7 @@ export default function QuestionsPreviewModal({
                         className={`px-6 py-3 font-medium transition-colors ${
                             activeTab === 'preview' 
                                 ? 'text-[#80ED99] border-b-2 border-[#80ED99]' 
-                                : 'text-gray-300 hover:text-white'
+                                : 'text-gray-300 hover:text-white cursor-pointer'
                         }`}
                     >
                         <DocumentTextIcon className="w-5 h-5 inline mr-2" />
@@ -238,7 +238,7 @@ export default function QuestionsPreviewModal({
                         className={`px-6 py-3 font-medium transition-colors ${
                             activeTab === 'edit' 
                                 ? 'text-[#80ED99] border-b-2 border-[#80ED99]' 
-                                : 'text-gray-300 hover:text-white'
+                                : 'text-gray-300 hover:text-white cursor-pointer'
                         }`}
                     >
                         <AcademicCapIcon className="w-5 h-5 inline mr-2" />

@@ -18,6 +18,7 @@ async function generateQuestions(subject: string, level: string, bloomTaxonomy: 
         3. ใส่คำอธิบายวิธีทำแบบละเอียดเป็นขั้นตอน
         4. ตอบเป็นภาษาไทยเท่านั้น
         5. **ตอบเป็น JSON เท่านั้น ไม่ต้องใส่ข้อความอื่น**
+        6. สร้างโจทย์ให้ครอบคลุมระดับขั้นของ Bloom's Taxonomy ที่กำหนด: ${bloomTaxonomy}
         
         **รูปแบบ JSON ที่ต้องการ:**
         {
@@ -39,7 +40,8 @@ async function generateQuestions(subject: string, level: string, bloomTaxonomy: 
                     "correct_option_index": 0,
                     "explanation": "ขั้นตอนที่ 1: หาตัวคูณร่วมน้อยของ 2 และ 3 ซึ่งคือ 6\\n\\nขั้นตอนที่ 2: แปลงเศษส่วนให้มีตัวส่วนเท่ากัน\\n$\\\\frac{1}{2} = \\\\frac{3}{6}$\\n$\\\\frac{1}{3} = \\\\frac{2}{6}$\\n\\nขั้นตอนที่ 3: บวกเศษส่วน\\n$\\\\frac{3}{6} + \\\\frac{2}{6} = \\\\frac{5}{6}$",
                     "score": 2,
-                    "difficulty": "medium"
+                    "difficulty": "medium",
+                    "bloom_level": "เข้าใจ"
                 }
             ]
         }
@@ -181,15 +183,25 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
     try {
         const supabase = await createSupabaseServerClient();
         const name = formData.get("h_name") as string;
-        const subject = formData.get("h_subject") as string;
+        let subject = formData.get("h_subject") as string;
         const bloomtax = formData.get("h_bloomtax") as string;
-        const type = formData.get("h_type") as string;
+        let type = formData.get("h_type") as string;
         const totalQuestions = formData.get("h_total_questions") as string;
         const level = formData.get("h_level") as string;
         const content = formData.get("h_content") as string;
 
+        // Parse multiple Bloom's Taxonomy values
+        const bloomTaxonomies = bloomtax ? bloomtax.split(',').map(b => b.trim()).filter(b => b.length > 0) : [];
+
+        // Subject and type validation for default values
+        if (!subject || !type) {
+            subject = "พีชคณิต";
+            type = "แบบฝึกหัด";
+        }
+
         // Check empty fields
-        if (!name || !subject || !bloomtax || !type || !totalQuestions) {
+        if (!name || !subject || bloomTaxonomies.length === 0 || !type || !totalQuestions) {
+            console.log("Empty fields detected:", { name, subject, bloomTaxonomies, type, totalQuestions });
             return {
                 title: "เกิดข้อผิดพลาด",
                 message: "กรุณากรอกข้อมูลให้ครบถ้วน",
@@ -224,7 +236,7 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
                             h_name: name,
                             h_temail: userData.t_email,
                             h_subject: subject,
-                            h_bloom_taxonomy: bloomtax,
+                            h_bloom_taxonomy: bloomTaxonomies.join(', '),
                             h_type: type,
                             h_score: Math.round(questionsData.metadata.total_score),
                             h_content: questionsData,
@@ -246,7 +258,7 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
         }
 
         // Generate questions with AI
-        const generatedQuestions = await generateQuestions(subject, level || "ไม่ระบุ", bloomtax, type, totalQuestionsNumber, content);
+        const generatedQuestions = await generateQuestions(subject, level || "ไม่ระบุ", bloomTaxonomies.join(', '), type, totalQuestionsNumber, content);
         
         if (generatedQuestions.type === "error") {
             return generatedQuestions;
@@ -259,7 +271,7 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
                 h_name: name,
                 h_temail: userData.t_email,
                 h_subject: subject,
-                h_bloom_taxonomy: bloomtax,
+                h_bloom_taxonomy: bloomTaxonomies.join(', '),
                 h_type: type,
                 h_score: Math.round(generatedQuestions.metadata.total_score),
                 h_content: generatedQuestions,
