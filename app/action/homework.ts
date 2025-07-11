@@ -381,17 +381,58 @@ async function getHomeworkDetails(homeworkId: number) {
     }
 }
 
-// Delete homework
-async function deleteHomework(homeworkId: number) {
+// Delete homework with active check
+async function deleteHomework(prevState: any, formData: FormData): Promise<any> {
     try {
         const supabase = await createSupabaseServerClient();
         const userData = await getUserData();
         if (!userData) return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลผู้ใช้", type: "error" };
 
-        // First, get the homework to check if it exists
+        const homeworkId = parseInt(formData.get("homeworkId") as string);
+        
+        if (isNaN(homeworkId)) {
+            return { title: "เกิดข้อผิดพลาด", message: "ข้อมูลไม่ถูกต้อง", type: "error" };
+        }
+
+        // First, check if homework is being used in actives table
+        const { data: actives, error: activesError } = await supabase
+            .from("actives")
+            .select("a_id, a_homework")
+            .or(`a_homework->>id.eq.${homeworkId}`);
+
+        // If there's an error but it's because the table doesn't exist, continue
+        if (activesError && !activesError.message.includes('does not exist')) {
+            console.error("Error checking actives:", activesError);
+            return { 
+                title: "เกิดข้อผิดพลาด", 
+                message: "ไม่สามารถตรวจสอบสถานะการใช้งานได้", 
+                type: "error" 
+            };
+        }
+
+        // Filter actives that actually contain this homework
+        const filteredActives = actives?.filter(active => {
+            if (typeof active.a_homework === 'number') {
+                return active.a_homework === homeworkId;
+            } else if (typeof active.a_homework === 'object' && active.a_homework !== null) {
+                return (active.a_homework as any).id === homeworkId;
+            }
+            return false;
+        }) || [];
+
+        // If homework is being used, prevent deletion
+        if (filteredActives.length > 0) {
+            return { 
+                title: "ไม่สามารถลบได้", 
+                message: "ชุดฝึกนี้กำลังถูกใช้งานในห้องเรียน กรุณาเอาออกจากห้องเรียนก่อนลบ", 
+                type: "error" 
+            };
+        }
+
+        // Check if homework exists and belongs to teacher
         const { data: homework, error: fetchError } = await supabase
             .from("homework")
-            .select("h_id")
+            .select("h_id, h_name")
             .eq("h_id", homeworkId)
             .eq("h_temail", userData.t_email)
             .single();
@@ -407,10 +448,62 @@ async function deleteHomework(homeworkId: number) {
         
         if (deleteError) return { title: "เกิดข้อผิดพลาด", message: deleteError.message, type: "error" };
 
-        return { title: "สำเร็จ", message: "ลบการบ้านเรียบร้อยแล้ว", type: "success" };
+        return { title: "สำเร็จ", message: `ลบชุดฝึก "${homework.h_name}" เรียบร้อยแล้ว`, type: "success" };
     } catch (error: any) {
         console.log("Server error: ", error.message);
         return { title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์", message: error.message, type: "error" };
+    }
+}
+
+// Check if homework is being used in actives table
+async function checkHomeworkActive(homeworkId: number) {
+    try {
+        const supabase = await createSupabaseServerClient();
+        const userData = await getUserData();
+        
+        if (!userData) {
+            return { isActive: false, classNames: [] };
+        }
+
+        // Check if homework is being used in actives table
+        const { data: actives, error: activesError } = await supabase
+            .from('actives')
+            .select(`*`)
+            .or(`a_homework->>id.eq.${homeworkId}`)
+            .eq('a_temail', userData.t_email);
+
+        if (activesError) {
+            console.error('Error checking actives:', activesError);
+            // If table doesn't exist or other error, assume not active
+            return { isActive: false, classNames: [] };
+        }
+
+        // Filter actives that actually contain this homework
+        const filteredActives = actives?.filter(active => {
+            if (typeof active.a_homework === 'number') {
+                return active.a_homework === homeworkId;
+            } else if (typeof active.a_homework === 'object' && active.a_homework !== null) {
+                return (active.a_homework as any).id === homeworkId;
+            }
+            return false;
+        }) || [];
+
+        const isActive = filteredActives.length > 0;
+        
+        // Get unique class names
+        const classNames = isActive 
+            ? [...new Set(filteredActives.map(active => (active as any)?.c_name).filter(Boolean))]
+            : [];
+
+        return {
+            isActive,
+            classNames,
+            activeCount: filteredActives.length
+        };
+
+    } catch (error) {
+        console.error('Error in checkHomeworkActive:', error);
+        return { isActive: false, classNames: [] };
     }
 }
 
@@ -421,4 +514,5 @@ export {
     updateHomework,
     getHomeworkDetails,
     deleteHomework,
+    checkHomeworkActive
 }

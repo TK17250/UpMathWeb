@@ -131,8 +131,9 @@ async function addHomeworkToClass(prevState: any, formData: FormData): Promise<a
         // Prepare the homework data structure for a_homework field
         const homeworkDataForClass = {
             id: homeworkIdNum,
+            check_type: aiCheck === "true" ? "AI" : "manual",
+            content: homeworkContentForStudents,
             time_assignment: new Date().toISOString(),
-            content: homeworkContentForStudents
         };
 
         // Add homework to actives for all students in the class
@@ -226,7 +227,7 @@ async function getActivesByClassId(classId: number): Promise<any> {
                 homeworkMap.set(homeworkId, {
                     homeworkId,
                     assignedAt: active.a_homework?.time_assignment || new Date().toISOString(),
-                    checkType: active.a_status || 'AI',
+                    checkType: active.a_homework?.check_type || 'AI',
                     studentCount: 0,
                     content: active.a_homework?.content || null
                 });
@@ -266,7 +267,7 @@ async function getActivesByClassId(classId: number): Promise<any> {
                 h_bloom_taxonomy: homeworkDetails?.h_bloom_taxonomy || '',
                 h_content: assignment.content,
                 assignedAt: assignment.assignedAt,
-                checkType: assignment.checkType,
+                check_type: assignment.checkType,
                 studentCount: assignment.studentCount
             };
         });
@@ -399,7 +400,7 @@ async function removeHomeworkFromClass(classId: number, homeworkId: number): Pro
             .delete()
             .eq("a_cid", classId)
             .eq("a_temail", userData.t_email)
-            .or(`a_homework.eq.${homeworkId},a_homework->>id.eq.${homeworkId}`);
+            .or(`a_homework->>id.eq.${homeworkId}`);
 
         if (deleteError) {
             console.error("Delete actives error:", deleteError);

@@ -3,7 +3,19 @@ import { useState, useEffect } from 'react';
 import { XMarkIcon, DocumentTextIcon, AcademicCapIcon, DocumentArrowDownIcon } from '@heroicons/react/24/outline';
 import KaTeXRenderer, { MathText, MathDisplay } from '@/utils/katexRenderer';
 import { downloadPDF as generatePDF } from '@/utils/pdfGenerator';
+import { deleteHomework } from '@/app/action/homework';
+import DeleteHomeworkModal from './delete_homework_modal';
 import 'katex/dist/katex.min.css';
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faTrash } from "@fortawesome/free-solid-svg-icons";
+import { AlertType } from '../component/alert1';
+
+// Extend Window interface to include showAlert
+declare global {
+    interface Window {
+        showAlert?: (title: string, message: string, type: AlertType) => void;
+    }
+}
 
 interface Question {
     id: number;
@@ -35,18 +47,35 @@ interface QuestionsPreviewModalProps {
     onClose: () => void;
     questionsData: QuestionsData | null;
     onSave: (data: QuestionsData) => void;
+    homeworkId?: number;
+    homeworkName?: string;
+    onDelete?: () => void;
 }
 
 export default function QuestionsPreviewModal({ 
     isOpen, 
     onClose, 
     questionsData, 
-    onSave 
+    onSave,
+    homeworkId,
+    homeworkName,
+    onDelete
 }: QuestionsPreviewModalProps) {
     const [editableData, setEditableData] = useState<QuestionsData | null>(null);
     const [activeTab, setActiveTab] = useState<'preview' | 'edit'>('preview');
     const [isExiting, setIsExiting] = useState(false);
     const [expandedQuestions, setExpandedQuestions] = useState<Record<number, boolean>>({});
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+
+    // Helper function to show alerts
+    const showAlert = (title: string, message: string, type: AlertType = 'info') => {
+        if (window.showAlert) {
+            window.showAlert(title, message, type);
+        } else {
+            // Fallback to browser alert if Alert1 component is not available
+            alert(`${title}: ${message}`);
+        }
+    };
 
     useEffect(() => {
         if (questionsData) {
@@ -106,8 +135,22 @@ export default function QuestionsPreviewModal({
 
     const handleSave = () => {
         if (editableData) {
-            onSave(editableData);
-            handleClose();
+            try {
+                onSave(editableData);
+                showAlert(
+                    'บันทึกสำเร็จ',
+                    'บันทึกการแก้ไขโจทย์เรียบร้อยแล้ว',
+                    'success'
+                );
+                handleClose();
+            } catch (error) {
+                console.error('Save error:', error);
+                showAlert(
+                    'เกิดข้อผิดพลาด',
+                    'ไม่สามารถบันทึกการแก้ไขได้ กรุณาลองอีกครั้ง',
+                    'error'
+                );
+            }
         }
     };
 
@@ -155,44 +198,81 @@ export default function QuestionsPreviewModal({
     };
 
     const exportQuestions = (includeAnswers: boolean = false) => {
-        if (!editableData) return;
+        try {
+            if (!editableData) return;
 
-        const exportData = {
-            metadata: editableData.metadata,
-            questions: editableData.questions.map(q => ({
-                id: q.id,
-                question: q.question,
-                question_type: q.question_type,
-                options: q.options,
-                ...(includeAnswers && {
-                    correct_answer: q.correct_answer,
-                    correct_option_index: q.correct_option_index,
-                    explanation: q.explanation
-                }),
-                score: q.score,
-                difficulty: q.difficulty
-            }))
-        };
+            const exportData = {
+                metadata: editableData.metadata,
+                questions: editableData.questions.map(q => ({
+                    id: q.id,
+                    question: q.question,
+                    question_type: q.question_type,
+                    options: q.options,
+                    ...(includeAnswers && {
+                        correct_answer: q.correct_answer,
+                        correct_option_index: q.correct_option_index,
+                        explanation: q.explanation
+                    }),
+                    score: q.score,
+                    difficulty: q.difficulty
+                }))
+            };
 
-        const dataStr = JSON.stringify(exportData, null, 2);
-        const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-        
-        const exportFileDefaultName = `questions_${includeAnswers ? 'with_answers' : 'only'}_${Date.now()}.json`;
-        
-        const linkElement = document.createElement('a');
-        linkElement.setAttribute('href', dataUri);
-        linkElement.setAttribute('download', exportFileDefaultName);
-        linkElement.click();
+            const dataStr = JSON.stringify(exportData, null, 2);
+            const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+            
+            const exportFileDefaultName = `questions_${includeAnswers ? 'with_answers' : 'only'}_${Date.now()}.json`;
+            
+            const linkElement = document.createElement('a');
+            linkElement.setAttribute('href', dataUri);
+            linkElement.setAttribute('download', exportFileDefaultName);
+            linkElement.click();
+
+            showAlert(
+                'Export สำเร็จ',
+                `Export ข้อมูล${includeAnswers ? 'พร้อมเฉลย' : ''} JSON เรียบร้อยแล้ว`,
+                'success'
+            );
+        } catch (error) {
+            console.error('Export error:', error);
+            showAlert(
+                'เกิดข้อผิดพลาด',
+                'ไม่สามารถ export ข้อมูลได้ กรุณาลองอีกครั้ง',
+                'error'
+            );
+        }
     };
 
     const downloadPDF = async (includeAnswers: boolean = false) => {
         try {
             if (!editableData) return;
             await generatePDF(editableData, includeAnswers);
+            showAlert(
+                'ดาวน์โหลด PDF สำเร็จ',
+                `ดาวน์โหลด${includeAnswers ? 'โจทย์พร้อมเฉลย' : 'โจทย์'} PDF เรียบร้อยแล้ว`,
+                'success'
+            );
         } catch (error) {
             console.error('PDF generation error:', error);
-            alert('เกิดข้อผิดพลาดในการสร้าง PDF กรุณาลองอีกครั้ง');
+            showAlert(
+                'เกิดข้อผิดพลาด',
+                'ไม่สามารถสร้าง PDF ได้ กรุณาลองอีกครั้ง',
+                'error'
+            );
         }
+    };
+
+    const handleDeleteSuccess = () => {
+        setShowDeleteModal(false);
+        showAlert(
+            'ลบชุดฝึกสำเร็จ',
+            'ลบชุดฝึกเรียบร้อยแล้ว',
+            'success'
+        );
+        if (onDelete) {
+            onDelete();
+        }
+        handleClose();
     };
 
     if (!isOpen || !editableData) return null;
@@ -250,7 +330,7 @@ export default function QuestionsPreviewModal({
                     } transform-gpu`}
             >
                 {/* Header */}
-                <div className="flex items-center justify-between p-6 border-b border-[#203D4F]">
+                <div className="lg:flex items-center justify-between p-6 border-b border-[#203D4F]">
                     <div>
                         <h2 className="text-2xl font-bold text-white">โจทย์ที่สร้างแล้ว</h2>
                         <p className="text-gray-300 mt-1">
@@ -268,11 +348,11 @@ export default function QuestionsPreviewModal({
                             </p>
                         </div>
                     </div>
-                    <div className="flex items-center space-x-3">
+                    <div className="lg:flex items-center space-x-3 mt-3 lg:mt-0">
                         {/* PDF Download Buttons */}
                         <button
                             onClick={() => downloadPDF(false)}
-                            className="flex items-center space-x-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm cursor-pointer"
+                            className="flex items-center space-x-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm cursor-pointer mt-3 lg:mt-0"
                             title="ดาวน์โหลดโจทย์ PDF"
                         >
                             <DocumentArrowDownIcon className="w-4 h-4" />
@@ -280,15 +360,34 @@ export default function QuestionsPreviewModal({
                         </button>
                         <button
                             onClick={() => downloadPDF(true)}
-                            className="flex items-center space-x-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm cursor-pointer"
+                            className="flex items-center space-x-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm cursor-pointer mt-3 lg:mt-0"
                             title="ดาวน์โหลดโจทย์พร้อมเฉลย PDF"
                         >
                             <DocumentArrowDownIcon className="w-4 h-4" />
                             <span>พร้อมเฉลย PDF</span>
                         </button>
+
+                        <div className="border-[1px] border-gray-500 h-8 hidden lg:block"></div>
+
+                        {/* Delete */}
+                        {homeworkId && homeworkName && (
+                            <button 
+                                onClick={() => setShowDeleteModal(true)}
+                                className="flex items-center space-x-2 px-3 py-2 bg-[#203D4F] border-[#002D4A] border-2 hover:bg-[#002D4A] text-white hover:border-red-400 hover:text-red-400 rounded-lg transition-colors text-sm cursor-pointer mt-3 lg:mt-0"
+                            >
+                                <FontAwesomeIcon
+                                    icon={faTrash}
+                                    className="w-5 h-5"
+                                />
+                                <span>ลบชุดฝึกนี้</span>
+                            </button>
+                        )}
+
+                        <div className="border-[1px] border-gray-500 h-8 hidden lg:block"></div>
+
                         <button
                             onClick={handleClose}
-                            className="text-white hover:text-gray-300 transition-colors"
+                            className="text-white hover:text-gray-300 transition-colors cursor-pointer absolute top-5 right-5 lg:relative lg:top-auto lg:right-auto"
                         >
                             <XMarkIcon className="w-6 h-6" />
                         </button>
@@ -610,6 +709,28 @@ export default function QuestionsPreviewModal({
                     </div>
                 </div>
             </div>
+
+            {/* Delete Homework Modal */}
+            {homeworkId && homeworkName && (
+                <DeleteHomeworkModal
+                    isOpen={showDeleteModal}
+                    onClose={() => setShowDeleteModal(false)}
+                    homeworkId={homeworkId}
+                    homeworkName={homeworkName}
+                    formAction={async (formData: FormData) => {
+                        const result = await deleteHomework({}, formData);
+                        if (result.type === 'success') {
+                            handleDeleteSuccess();
+                        } else {
+                            showAlert(
+                                'ลบชุดฝึกไม่สำเร็จ',
+                                result.message || 'เกิดข้อผิดพลาดในการลบชุดฝึก กรุณาลองอีกครั้ง',
+                                'error'
+                            );
+                        }
+                    }}
+                />
+            )}
         </div>
     );
 }

@@ -55,7 +55,7 @@ interface HomeworkItem {
     h_bloom_taxonomy: string;
     h_content: any;
     assignedAt?: string;
-    checkType?: 'AI' | 'manual';
+    check_type: string;
 }
 
 interface MediaItem {
@@ -869,8 +869,8 @@ export default function Class() {
                                         <div key={homework.h_id} className="bg-[#2D4A5B] p-4 rounded-lg border border-[#203D4F] hover:border-[#80ED99] transition-all duration-300">
                                             <div className="flex justify-between items-start mb-3">
                                                 <h3 className="font-bold text-white line-clamp-2">{homework.h_name}</h3>
-                                                <div className={`text-xs px-2 py-1 rounded-full ${homework.checkType === 'AI' ? 'bg-blue-500/20 text-blue-400' : 'bg-orange-500/20 text-orange-400'}`}>
-                                                    {homework.checkType === 'AI' ? 'AI ตรวจ' : 'ครูตรวจ'}
+                                                <div className={`text-xs px-2 py-1 rounded-full ${homework.check_type === 'AI' ? 'bg-blue-500/20 text-blue-400' : 'bg-orange-500/20 text-orange-400'}`}>
+                                                    {homework.check_type === 'AI' ? 'AI ตรวจ' : 'ครูตรวจ'}
                                                 </div>
                                             </div>
                                             

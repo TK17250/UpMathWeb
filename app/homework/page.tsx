@@ -233,6 +233,13 @@ export default function Homework() {
                         }}
                         questionsData={selectedHomework?.h_content || null}
                         onSave={handleQuestionsSave}
+                        homeworkId={selectedHomework?.h_id}
+                        homeworkName={selectedHomework?.h_name}
+                        onDelete={() => {
+                            refreshHomeworkData();
+                            setIsQuestionsModalOpen(false);
+                            setSelectedHomework(null);
+                        }}
                     />
                 </div>
             )}

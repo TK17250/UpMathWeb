@@ -1,8 +1,11 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { getHomeworkProgress } from '@/app/action/actives';
+import { getHomeworkProgress, removeHomeworkFromClass } from '@/app/action/actives';
 import { getStudentID } from '../action/students';
+import { XMarkIcon } from '@heroicons/react/24/outline';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faTrash } from '@fortawesome/free-solid-svg-icons';
 
 interface StudentData {
     s_id: string;
@@ -38,8 +41,9 @@ export default function HomeworkProgressModal({
     homeworkName 
 }: HomeworkProgressModalProps) {
     const [progressData, setProgressData] = useState<ProgressData[]>([]);
-    const [studentsData, setStudentsData] = useState<Record<string, StudentData>>({});
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     useEffect(() => {
         if (isOpen && classId && homeworkId) {
@@ -75,6 +79,39 @@ export default function HomeworkProgressModal({
         onClose();
     };
 
+    const handleDelete = async () => {
+        setShowDeleteModal(false);
+        setIsDeleting(true);
+        
+        try {
+            const result = await removeHomeworkFromClass(classId, homeworkId);
+            if (result.type === 'success') {
+                if (window.showAlert) {
+                    window.showAlert('สำเร็จ', `ลบชุดฝึก "${homeworkName}" ออกจากชั้นเรียนเรียบร้อยแล้ว`, 'success');
+                }
+                // Close modal after successful deletion
+                setTimeout(() => {
+                    handleClose();
+                    // Trigger parent component refresh if needed
+                    if (typeof window !== 'undefined' && window.location) {
+                        window.location.reload();
+                    }
+                }, 1500);
+            } else {
+                if (window.showAlert) {
+                    window.showAlert('เกิดข้อผิดพลาด', result.message || 'ไม่สามารถลบชุดฝึกได้', 'error');
+                }
+                setIsDeleting(false);
+            }
+        } catch (error) {
+            console.error('Error deleting homework:', error);
+            if (window.showAlert) {
+                window.showAlert('เกิดข้อผิดพลาด', 'เกิดข้อผิดพลาดในการเชื่อมต่อ กรุณาลองใหม่อีกครั้ง', 'error');
+            }
+            setIsDeleting(false);
+        }
+    };
+
     if (!isOpen) return null;
 
     const completedCount = progressData.filter(item => item.a_status === 'completed').length;
@@ -88,18 +125,59 @@ export default function HomeworkProgressModal({
                         <h2 className="text-2xl font-bold text-white">ความคืบหน้าชุดฝึก</h2>
                         <p className="text-[#80ED99] mt-1">{homeworkName}</p>
                     </div>
-                    <button
-                        onClick={handleClose}
-                        className="text-white hover:text-[#80ED99] transition-colors duration-300 text-2xl cursor-pointer"
-                    >
-                        ×
-                    </button>
+
+                    <div className="flex items-center space-x-3">
+                        {/* Delete Button - Improved styling */}
+                        <button 
+                            onClick={() => setShowDeleteModal(true)}
+                            disabled={isDeleting}
+                            className={`flex items-center space-x-2 px-4 py-2 border rounded-lg transition-all duration-300 text-sm font-medium group ${
+                                isDeleting 
+                                    ? 'bg-gray-600/20 border-gray-500/30 text-gray-500 cursor-not-allowed'
+                                    : 'bg-red-600/10 border-red-500/30 hover:bg-red-600/20 hover:border-red-500/50 text-red-400 hover:text-red-300 cursor-pointer'
+                            }`}
+                            title={isDeleting ? 'กำลังลบชุดฝึก...' : 'ลบชุดฝึกออกจากชั้นเรียน'}
+                        >
+                            {isDeleting ? (
+                                <div className="w-4 h-4 border-2 border-gray-500 border-t-transparent rounded-full animate-spin"></div>
+                            ) : (
+                                <FontAwesomeIcon
+                                    icon={faTrash}
+                                    className="w-4 h-4 group-hover:scale-110 transition-transform duration-200"
+                                />
+                            )}
+                            <span className="hidden sm:inline">
+                                {isDeleting ? 'กำลังลบ...' : 'ลบออกจากชั้นเรียน'}
+                            </span>
+                            <span className="sm:hidden">
+                                {isDeleting ? 'กำลังลบ...' : 'ลบ'}
+                            </span>
+                        </button>
+
+                        {/* Divider */}
+                        <div className="border-l border-gray-600 h-6"></div>
+
+                        {/* Close Button */}
+                        <button
+                            onClick={handleClose}
+                            className="p-2 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-lg transition-all duration-300 group cursor-pointer"
+                            title="ปิดหน้าต่าง"
+                        >
+                            <XMarkIcon className="h-5 w-5 group-hover:scale-110 transition-transform duration-200" />
+                        </button>
+                    </div>
                 </div>
 
                 {loading ? (
                     <div className="text-white p-8 text-center">
                         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#80ED99] mx-auto mb-4"></div>
                         กำลังโหลดข้อมูล...
+                    </div>
+                ) : isDeleting ? (
+                    <div className="text-white p-8 text-center">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-400 mx-auto mb-4"></div>
+                        <p className="text-red-400 mb-2">กำลังลบชุดฝึกออกจากชั้นเรียน...</p>
+                        <p className="text-sm text-gray-400">กรุณารอสักครู่</p>
                     </div>
                 ) : (
                     <>
@@ -190,7 +268,7 @@ export default function HomeworkProgressModal({
                                                         
                                                         {/* Additional Info */}
                                                         <div className="mt-2 text-xs text-white/60">
-                                                            <div>การตรวจ: {item.a_type === 'AI' ? 'AI ตรวจ' : 'ครูตรวจ'}</div>
+                                                            <div>การตรวจ: {item.a_homework?.check_type === 'AI' ? 'AI ตรวจ' : 'ครูตรวจ'}</div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -211,12 +289,63 @@ export default function HomeworkProgressModal({
                 <div className="mt-6 flex justify-end">
                     <button
                         onClick={handleClose}
-                        className="py-3 px-6 bg-[#80ED99] hover:bg-[#80ED99]/80 text-[#203D4F] font-semibold rounded-lg transition-colors duration-300 cursor-pointer"
+                        disabled={isDeleting}
+                        className={`py-3 px-6 font-semibold rounded-lg transition-colors duration-300 ${
+                            isDeleting 
+                                ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                                : 'bg-[#80ED99] hover:bg-[#80ED99]/80 text-[#203D4F] cursor-pointer'
+                        }`}
                     >
-                        ปิด
+                        {isDeleting ? 'กำลังดำเนินการ...' : 'ปิด'}
                     </button>
                 </div>
             </div>
+
+            {showDeleteModal && (
+                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4">
+                    <div className="bg-[#203D4F] rounded-lg p-6 w-full max-w-md">
+                        {/* Header */}
+                        <div className="flex items-center space-x-3 mb-4">
+                            <div className="text-2xl">⚠️</div>
+                            <h3 className="text-lg font-semibold text-white">ยืนยันการลบชุดฝึกออกจากชั้นเรียน</h3>
+                        </div>
+
+                        {/* Content */}
+                        <div className="space-y-4 mb-6">
+                            <p className="text-white">
+                                คุณต้องการลบชุดฝึก <span className="font-semibold text-yellow-400">"{homeworkName}"</span> ออกจากชั้นเรียนนี้หรือไม่?
+                            </p>
+                            
+                            <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-3">
+                                <p className="text-sm text-yellow-300 mb-2">
+                                    <strong>หมายเหตุ:</strong> การลบจะทำให้:
+                                </p>
+                                <ul className="text-sm text-yellow-200 ml-4 list-disc space-y-1">
+                                    <li>นักเรียนไม่สามารถเข้าถึงชุดฝึกนี้ได้อีก</li>
+                                    <li>ข้อมูลความคืบหน้าของนักเรียนจะถูกลบ</li>
+                                    <li>การกระทำนี้ไม่สามารถย้อนกลับได้</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        {/* Buttons */}
+                        <div className="flex space-x-3">
+                            <button
+                                onClick={() => setShowDeleteModal(false)}
+                                className="flex-1 py-2.5 px-4 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors duration-200 font-medium cursor-pointer"
+                            >
+                                ยกเลิก
+                            </button>
+                            <button
+                                onClick={handleDelete}
+                                className="flex-1 py-2.5 px-4 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors duration-200 font-medium cursor-pointer"
+                            >
+                                ยืนยัน<br />ลบออกจากชั้นเรียน
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>,
         document.body
     );
