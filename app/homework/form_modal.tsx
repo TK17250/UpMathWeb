@@ -543,7 +543,7 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction, onSav
                             <button
                                 type="button"
                                 onClick={handleCancelGeneration}
-                                className="px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-all duration-200 font-medium"
+                                className="px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-all duration-200 font-medium cursor-pointer"
                             >
                                 ยกเลิกการสร้าง
                             </button>

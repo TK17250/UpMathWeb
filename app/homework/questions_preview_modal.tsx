@@ -1,6 +1,9 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { XMarkIcon, DocumentTextIcon, AcademicCapIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, DocumentTextIcon, AcademicCapIcon, DocumentArrowDownIcon } from '@heroicons/react/24/outline';
+import KaTeXRenderer, { MathText, MathDisplay } from '@/utils/katexRenderer';
+import { downloadPDF as generatePDF } from '@/utils/pdfGenerator';
+import 'katex/dist/katex.min.css';
 
 interface Question {
     id: number;
@@ -47,9 +50,22 @@ export default function QuestionsPreviewModal({
 
     useEffect(() => {
         if (questionsData) {
-            setEditableData(JSON.parse(JSON.stringify(questionsData)));
+            const processedData = JSON.parse(JSON.stringify(questionsData));
+            
+            // Fix any inconsistencies between correct_answer and correct_option_index
+            processedData.questions = processedData.questions.map((question: Question) => {
+                if (question.options && question.correct_answer) {
+                    const correctIndex = question.options.findIndex(option => option === question.correct_answer);
+                    if (correctIndex !== -1 && correctIndex !== question.correct_option_index) {
+                        question.correct_option_index = correctIndex;
+                    }
+                }
+                return question;
+            });
+            
+            setEditableData(processedData);
             // เปิดข้อแรกโดยอัตโนมัติ
-            const firstQuestionId = questionsData.questions[0]?.id;
+            const firstQuestionId = processedData.questions[0]?.id;
             if (firstQuestionId) {
                 setExpandedQuestions({ [firstQuestionId]: true });
             }
@@ -117,9 +133,22 @@ export default function QuestionsPreviewModal({
 
         const updatedData = {
             ...editableData,
-            questions: editableData.questions.map(q => 
-                q.id === questionId ? { ...q, [field]: value } : q
-            )
+            questions: editableData.questions.map(q => {
+                if (q.id === questionId) {
+                    const updatedQuestion = { ...q, [field]: value };
+                    
+                    // If options are updated, ensure correct_option_index matches correct_answer
+                    if (field === 'options' && updatedQuestion.options && updatedQuestion.correct_answer) {
+                        const correctIndex = updatedQuestion.options.findIndex(option => option === updatedQuestion.correct_answer);
+                        if (correctIndex !== -1) {
+                            updatedQuestion.correct_option_index = correctIndex;
+                        }
+                    }
+                    
+                    return updatedQuestion;
+                }
+                return q;
+            })
         };
 
         setEditableData(updatedData);
@@ -156,23 +185,13 @@ export default function QuestionsPreviewModal({
         linkElement.click();
     };
 
-    const downloadPDF = (includeAnswers: boolean = false) => {
-        if (!editableData) return;
-
-        // Create a confirmation dialog
-        const confirmed = window.confirm(
-            includeAnswers 
-                ? 'ดาวน์โหลดโจทย์พร้อมคำตอบและวิธีทำเป็นไฟล์ PDF?' 
-                : 'ดาวน์โหลดเฉพาะโจทย์เป็นไฟล์ PDF?'
-        );
-
-        if (confirmed) {
-            // Here you would typically call an API to generate PDF
-            // For now, we'll show an alert
-            alert(`กำลังเตรียมไฟล์ PDF ${includeAnswers ? 'พร้อมคำตอบ' : 'เฉพาะโจทย์'}...`);
-            
-            // TODO: Implement PDF generation
-            // This could be done with libraries like jsPDF or by sending data to a server endpoint
+    const downloadPDF = async (includeAnswers: boolean = false) => {
+        try {
+            if (!editableData) return;
+            await generatePDF(editableData, includeAnswers);
+        } catch (error) {
+            console.error('PDF generation error:', error);
+            alert('เกิดข้อผิดพลาดในการสร้าง PDF กรุณาลองอีกครั้ง');
         }
     };
 
@@ -249,12 +268,31 @@ export default function QuestionsPreviewModal({
                             </p>
                         </div>
                     </div>
-                    <button
-                        onClick={handleClose}
-                        className="text-white hover:text-gray-300 transition-colors"
-                    >
-                        <XMarkIcon className="w-6 h-6" />
-                    </button>
+                    <div className="flex items-center space-x-3">
+                        {/* PDF Download Buttons */}
+                        <button
+                            onClick={() => downloadPDF(false)}
+                            className="flex items-center space-x-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm cursor-pointer"
+                            title="ดาวน์โหลดโจทย์ PDF"
+                        >
+                            <DocumentArrowDownIcon className="w-4 h-4" />
+                            <span>โจทย์ PDF</span>
+                        </button>
+                        <button
+                            onClick={() => downloadPDF(true)}
+                            className="flex items-center space-x-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm cursor-pointer"
+                            title="ดาวน์โหลดโจทย์พร้อมเฉลย PDF"
+                        >
+                            <DocumentArrowDownIcon className="w-4 h-4" />
+                            <span>พร้อมเฉลย PDF</span>
+                        </button>
+                        <button
+                            onClick={handleClose}
+                            className="text-white hover:text-gray-300 transition-colors"
+                        >
+                            <XMarkIcon className="w-6 h-6" />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Tabs */}
@@ -347,7 +385,9 @@ export default function QuestionsPreviewModal({
                                                 <div className="pt-4">
                                                     <div className="text-white mb-4">
                                                         <h4 className="text-sm font-medium text-[#80ED99] mb-2">โจทย์:</h4>
-                                                        <p className="mb-3 bg-[#2D4A5B] p-3 rounded">{question.question}</p>
+                                                        <div className="mb-3 bg-[#2D4A5B] p-3 rounded">
+                                                            <MathText>{question.question}</MathText>
+                                                        </div>
                                                         
                                                         {question.options && (
                                                             <div className="space-y-2 mb-4">
@@ -361,7 +401,8 @@ export default function QuestionsPreviewModal({
                                                                                 : 'bg-[#2D4A5B] border border-[#002D4A]'
                                                                         }`}
                                                                     >
-                                                                        {optIndex + 1}. {option}
+                                                                        <span className="mr-2">{optIndex + 1}.</span>
+                                                                        <MathText>{option}</MathText>
                                                                         {optIndex === question.correct_option_index && (
                                                                             <span className="ml-2 text-xs text-green-400">✓ คำตอบที่ถูก</span>
                                                                         )}
@@ -373,9 +414,13 @@ export default function QuestionsPreviewModal({
 
                                                     <div className="border-t border-[#002D4A] pt-3">
                                                         <h4 className="text-sm font-medium text-[#80ED99] mb-2">คำตอบ:</h4>
-                                                        <p className="text-green-300 text-sm mb-3 bg-[#2D4A5B] p-2 rounded">{question.correct_answer}</p>
+                                                        <div className="text-green-300 text-sm mb-3 bg-[#2D4A5B] p-2 rounded">
+                                                            <MathText>{question.correct_answer}</MathText>
+                                                        </div>
                                                         <h4 className="text-sm font-medium text-[#80ED99] mb-2">วิธีทำ:</h4>
-                                                        <p className="text-gray-300 text-sm bg-[#2D4A5B] p-3 rounded leading-relaxed">{question.explanation}</p>
+                                                        <div className="text-gray-300 text-sm bg-[#2D4A5B] p-3 rounded leading-relaxed">
+                                                            <MathText>{question.explanation}</MathText>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -460,6 +505,11 @@ export default function QuestionsPreviewModal({
                                                                                 const newOptions = [...question.options!];
                                                                                 newOptions[optIndex] = e.target.value;
                                                                                 updateQuestionContent(question.id, 'options', newOptions);
+                                                                                
+                                                                                // Update correct_answer if this is the selected option
+                                                                                if (optIndex === question.correct_option_index) {
+                                                                                    updateQuestionContent(question.id, 'correct_answer', e.target.value);
+                                                                                }
                                                                             }}
                                                                             className={`flex-1 px-3 py-2 text-white rounded border focus:border-[#80ED99] ${
                                                                                 optIndex === question.correct_option_index 
@@ -480,12 +530,37 @@ export default function QuestionsPreviewModal({
                                                         <label className="block text-sm font-medium text-[#80ED99] mb-2">
                                                             คำตอบ
                                                         </label>
-                                                        <input
-                                                            type="text"
-                                                            value={question.correct_answer}
-                                                            onChange={(e) => updateQuestionContent(question.id, 'correct_answer', e.target.value)}
-                                                            className="w-full px-3 py-2 bg-[#2D4A5B] text-white rounded border border-[#002D4A] focus:border-[#80ED99]"
-                                                        />
+                                                        
+                                                        {/* Multiple choice - show dropdown */}
+                                                        {question.options && question.options.length > 0 ? (
+                                                            <div className="space-y-2">
+                                                                <select
+                                                                    value={question.correct_answer || question.options[0]}
+                                                                    onChange={(e) => {
+                                                                        const selectedValue = e.target.value;
+                                                                        const selectedIndex = question.options!.findIndex(option => option === selectedValue);
+                                                                        updateQuestionContent(question.id, 'correct_option_index', selectedIndex);
+                                                                        updateQuestionContent(question.id, 'correct_answer', selectedValue);
+                                                                    }}
+                                                                    className="w-full px-3 py-2 bg-[#2D4A5B] text-white rounded border border-[#002D4A] focus:border-[#80ED99]"
+                                                                >
+                                                                    {question.options.map((option, index) => (
+                                                                        <option key={index} value={option}>
+                                                                            {option}
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        ) : (
+                                                            // Open-ended question - show text input
+                                                            <textarea
+                                                                value={question.correct_answer}
+                                                                onChange={(e) => updateQuestionContent(question.id, 'correct_answer', e.target.value)}
+                                                                className="w-full px-3 py-2 bg-[#2D4A5B] text-white rounded border border-[#002D4A] focus:border-[#80ED99] resize-none"
+                                                                rows={3}
+                                                                placeholder="คำตอบสำหรับโจทย์อัตนัย"
+                                                            />
+                                                        )}
                                                     </div>
 
                                                     <div>
@@ -520,18 +595,6 @@ export default function QuestionsPreviewModal({
                         </div>
                     </div>
                     <div className="md:flex space-x-3">
-                        <button
-                            onClick={() => downloadPDF(false)}
-                            className="px-4 py-2 bg-[#203D4F] text-white rounded-md hover:bg-[#152b3a] transition-colors cursor-pointer mb-3 md:mb-0"
-                        >
-                            ดาวน์โหลดโจทย์ PDF
-                        </button>
-                        <button
-                            onClick={() => downloadPDF(true)}
-                            className="px-4 py-2 bg-[#203D4F] text-white rounded-md hover:bg-[#152b3a] transition-colors cursor-pointer mb-3 md:mb-0"
-                        >
-                            ดาวน์โหลดพร้อมเฉลย PDF
-                        </button>
                         <button
                             onClick={handleClose}
                             className="px-4 py-2 bg-[#203D4F] text-white rounded-md hover:bg-[#152b3a] transition-colors cursor-pointer mb-3 md:mb-0"

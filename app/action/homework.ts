@@ -15,10 +15,12 @@ async function generateQuestions(subject: string, level: string, bloomTaxonomy: 
         **ข้อกำหนดสำคัญ:**
         1. ใช้ KaTeX สำหรับการแสดงสูตรคณิตศาสตร์ทั้งหมด
         2. AI จะกำหนดคะแนนของแต่ละข้อตามความยาก (1-5 คะแนน)
-        3. ใส่คำอธิบายวิธีทำแบบละเอียดเป็นขั้นตอน
+        3. ใส่คำอธิบายวิธีทำแบบละเอียดเป็นขั้นตอน **ใช้ \\n\\n สำหรับขึ้นบรรทัดใหม่**
         4. ตอบเป็นภาษาไทยเท่านั้น
         5. **ตอบเป็น JSON เท่านั้น ไม่ต้องใส่ข้อความอื่น**
         6. สร้างโจทย์ให้ครอบคลุมระดับขั้นของ Bloom's Taxonomy ที่กำหนด: ${bloomTaxonomy}
+        7. สำหรับโจทย์ปรนัย ให้มี options และ correct_option_index
+        8. สำหรับโจทย์อัตนัย ให้ตั้ง options เป็น [] และ correct_option_index เป็น -1
         
         **รูปแบบ JSON ที่ต้องการ:**
         {
@@ -46,7 +48,7 @@ async function generateQuestions(subject: string, level: string, bloomTaxonomy: 
             ]
         }
         
-        **หมายเหตุ: ตอบเป็น JSON เท่านั้น ไม่ต้องมีข้อความอื่น**`;
+        **หมายเหตุ: ตอบเป็น JSON เท่านั้น ไม่ต้องมีข้อความอื่น ใช้ \\n\\n สำหรับขึ้นบรรทัดใหม่ในคำอธิบาย**`;
 
         const response = await axios.post(
             'https://openrouter.ai/api/v1/chat/completions',
@@ -80,9 +82,6 @@ async function generateQuestions(subject: string, level: string, bloomTaxonomy: 
         // Try to parse JSON from the response
         let questionsData;
         try {
-            // Log the response for debugging
-            console.log("AI Response:", generatedContent);
-            
             // Try multiple approaches to extract JSON
             let jsonString = generatedContent;
             
@@ -196,7 +195,7 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
         // Subject and type validation for default values
         if (!subject || !type) {
             subject = "พีชคณิต";
-            type = "แบบฝึกหัด";
+            type = "ปรนัย";
         }
 
         // Check empty fields
@@ -346,43 +345,80 @@ async function getHomework() {
     }
 }
 
-// // Delete homework
-// async function deleteHomework(homeworkId: number) {
-//     try {
-//         const supabase = await createSupabaseServerClient();
-//         const userData = await getUserData();
-//         if (!userData) return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลผู้ใช้", type: "error" };
+// Get homework details form id
+async function getHomeworkDetails(homeworkId: number) {
+    try {
+        const supabase = await createSupabaseServerClient();
+        const userData = await getUserData();
 
-//         // First, get the homework to check if it exists
-//         const { data: homework, error: fetchError } = await supabase
-//             .from("homework")
-//             .select("h_id")
-//             .eq("h_id", homeworkId)
-//             .eq("h_temail", userData.t_email)
-//             .single();
+        if (!userData) return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลผู้ใช้", type: "error" }; // Ensure user data is available
+
+        // Fetch homework details
+        const { data: homework, error: homeworkError } = await supabase
+            .from("homework")
+            .select("*")
+            .eq("h_id", homeworkId)
+            .eq("h_temail", userData.t_email)
+            .single();
+
+        if (homeworkError) {
+            console.error("Homework fetch error:", homeworkError);
+            return { 
+                title: "เกิดข้อผิดพลาด", 
+                message: `ไม่สามารถดึงข้อมูลชุดฝึกได้: ${homeworkError.message}`, 
+                type: "error" 
+            };
+        }
+
+        if (!homework) {
+            return { title: "ไม่พบชุดฝึก", message: "ไม่พบข้อมูลชุดฝึกที่ต้องการ", type: "error" };
+        }
+
+        return homework.h_content;
+    } catch (error: any) {
+        console.log("Server error: ", error.message);
+        return { title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์", message: error.message, type: "error" };
+    }
+}
+
+// Delete homework
+async function deleteHomework(homeworkId: number) {
+    try {
+        const supabase = await createSupabaseServerClient();
+        const userData = await getUserData();
+        if (!userData) return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลผู้ใช้", type: "error" };
+
+        // First, get the homework to check if it exists
+        const { data: homework, error: fetchError } = await supabase
+            .from("homework")
+            .select("h_id")
+            .eq("h_id", homeworkId)
+            .eq("h_temail", userData.t_email)
+            .single();
         
-//         if (fetchError) return { title: "เกิดข้อผิดพลาด", message: "ไม่พบการบ้านที่ต้องการลบ", type: "error" };
+        if (fetchError) return { title: "เกิดข้อผิดพลาด", message: "ไม่พบการบ้านที่ต้องการลบ", type: "error" };
 
-//         // Delete homework from database
-//         const { error: deleteError } = await supabase
-//             .from("homework")
-//             .delete()
-//             .eq("h_id", homeworkId)
-//             .eq("h_temail", userData.t_email);
+        // Delete homework from database
+        const { error: deleteError } = await supabase
+            .from("homework")
+            .delete()
+            .eq("h_id", homeworkId)
+            .eq("h_temail", userData.t_email);
         
-//         if (deleteError) return { title: "เกิดข้อผิดพลาด", message: deleteError.message, type: "error" };
+        if (deleteError) return { title: "เกิดข้อผิดพลาด", message: deleteError.message, type: "error" };
 
-//         return { title: "สำเร็จ", message: "ลบการบ้านเรียบร้อยแล้ว", type: "success" };
-//     } catch (error: any) {
-//         console.log("Server error: ", error.message);
-//         return { title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์", message: error.message, type: "error" };
-//     }
-// }
+        return { title: "สำเร็จ", message: "ลบการบ้านเรียบร้อยแล้ว", type: "success" };
+    } catch (error: any) {
+        console.log("Server error: ", error.message);
+        return { title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์", message: error.message, type: "error" };
+    }
+}
 
 export {
     createHomework,
     getHomework,
     generateQuestions,
     updateHomework,
-    // deleteHomework,
+    getHomeworkDetails,
+    deleteHomework,
 }

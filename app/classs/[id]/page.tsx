@@ -15,6 +15,10 @@ import DeleteClassModal from "./delete_modal";
 import { formatText, insertLink, updateHiddenInput } from "@/utils/richTextEditor";
 import { createNews, deleteNews, getNewsByClassId, updateNews } from "@/app/action/news";
 import ConfirmationModal2 from "@/app/component/modal2";
+import { getStudentID } from "@/app/action/students";
+import { getActivesByClassId } from "@/app/action/actives";
+import AddHomeworkToClassModal from "../add_homework_to_class_modal";
+import HomeworkProgressModal from "../homework_progress_modal";
 import ConfirmationModal from "@/app/component/modal1";
 
 // Define TypeScript interfaces
@@ -43,9 +47,15 @@ interface ClassData {
 }
 
 interface HomeworkItem {
-    title: string;
-    description: string;
-    [key: string]: any;
+    h_id: number;
+    h_name: string;
+    h_subject: string;
+    h_score: number;
+    h_type: string;
+    h_bloom_taxonomy: string;
+    h_content: any;
+    assignedAt?: string;
+    checkType?: 'AI' | 'manual';
 }
 
 interface MediaItem {
@@ -111,6 +121,11 @@ export default function Class() {
     const [showDeleteNewsModal, setShowDeleteNewsModal] = useState(false);
     const [deleteNewsById, setDeleteNewsById] = useState<number | null>(null);
     const [showUpdateModal, setShowUpdateModal] = useState(false);
+    const [showAddHomeworkModal, setShowAddHomeworkModal] = useState(false);
+    const [showProgressModal, setShowProgressModal] = useState(false);
+    const [selectedHomeworkProgress, setSelectedHomeworkProgress] = useState<{id: number, name: string} | null>(null);
+    const [classHomework, setClassHomework] = useState<any[]>([]);
+    const [studentsData, setStudentsData] = useState<Record<string, any>>({});
 
     // Check login
     const router = useRouter();
@@ -185,16 +200,83 @@ export default function Class() {
                 if (Array.isArray(response)) {
                     setNews(response);
                 } else {
-                    console.error("Error fetching news data:", response.message);
+                    console.error("News fetch error:", response);
                 }
-            } catch (error: any) {
-                console.error("Error fetching news data:", error.message);
+            } catch (err: any) {
+                console.error("Error fetching news:", err);
+            }
+        }
+
+        async function fetchClassHomework() {
+            if (classId <= 0) return;
+            
+            try {
+                const result = await getActivesByClassId(classId);
+                if (Array.isArray(result)) {
+                    setClassHomework(result);
+                } else if (result?.type === 'error') {
+                    console.error("Homework fetch error:", result.message);
+                }
+            } catch (err: any) {
+                console.error("Error fetching class homework:", err);
             }
         }
 
         fetchNewsData()
         fetchClassData();
+        fetchClassHomework();
     }, [classId, action]);
+
+    // Get student data from c_students
+    useEffect(() => {
+        if (!classData || !classData.c_students) return;
+
+        const fetchStudentsData = async () => {
+            const studentPromises = Object.entries(classData.c_students).map(async ([email, studentInfo]: [string, any]) => {
+                try {
+                    const studentData = await getStudentID(studentInfo.s_id);
+                    return studentData;
+                } catch (err) {
+                    console.error("Error fetching student data for", email, ":", err);
+                    return null;
+                }
+            });
+
+            const students = await Promise.all(studentPromises);
+            const studentData: Record<string, any> = {};
+            students.forEach((student: any) => {
+                if (student && student.s_id) {
+                    studentData[student.s_id] = student;
+                }
+            });
+            setStudentsData(studentData);
+        };
+
+        fetchStudentsData();
+    }, [classData]);
+
+    // Refresh homework when modal closes
+    const handleHomeworkRefresh = () => {
+        if (classId > 0) {
+            const fetchClassHomework = async () => {
+                try {
+                    const result = await getActivesByClassId(classId);
+                    if (Array.isArray(result)) {
+                        setClassHomework(result);
+                    }
+                } catch (err: any) {
+                    console.error("Error refreshing homework:", err);
+                }
+            };
+            fetchClassHomework();
+        }
+    };
+
+    // Handle homework progress view
+    const handleViewProgress = (homeworkId: number, homeworkName: string) => {
+        setSelectedHomeworkProgress({ id: homeworkId, name: homeworkName });
+        setShowProgressModal(true);
+    };
 
     // Show alert when action is completed
     useEffect(() => {
@@ -436,12 +518,57 @@ export default function Class() {
                         <hr className="my-2 border-white/30" />
                         <div>
                             {classData.c_students && Object.keys(classData.c_students).length > 0 ? (
-                                <div className="space-y-2">
-                                    <p className="font-semibold">จำนวนนักเรียนทั้งหมด: {Object.keys(classData.c_students).length} คน</p>
-                                    {/* Add more student information here if needed */}
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-2 gap-4 text-center">
+                                        <div className="bg-[#2D4A5B] p-3 rounded-lg">
+                                            <div className="text-2xl font-bold text-[#80ED99]">{Object.keys(classData.c_students).length}</div>
+                                            <div className="text-sm text-white/80">นักเรียนทั้งหมด</div>
+                                        </div>
+                                        <div className="bg-[#2D4A5B] p-3 rounded-lg">
+                                            <div className="text-2xl font-bold text-blue-400">{classHomework.length}</div>
+                                            <div className="text-sm text-white/80">ชุดฝึกที่มอบหมาย</div>
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Student List Preview */}
+                                    <div className="max-h-32 overflow-y-auto">
+                                        {Object.entries(studentsData).slice(0, 5).map(([email, studentInfo]: [string, any], index) => (
+                                            <div key={email} className="flex items-center space-x-3 py-2 border-b border-white/10 last:border-b-0">
+                                                <div className="w-8 h-8 bg-[#80ED99] rounded-full flex items-center justify-center text-[#203D4F] font-bold text-sm">
+                                                    {(studentInfo?.s_email || email).charAt(0).toUpperCase()}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-white text-sm font-medium truncate">
+                                                        ชื่อผู้ใช้: {studentInfo?.s_username || 'ไม่มีชื่อ'}
+                                                    </div>
+                                                    <div className="text-white/60 text-xs truncate">
+                                                        อีเมล: {studentInfo?.s_email || email}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {Object.keys(studentsData).length > 5 && (
+                                            <div className="text-center text-white/60 text-sm py-2">
+                                                และอีก {Object.keys(studentsData).length - 5} คน
+                                            </div>
+                                        )}
+                                        {Object.keys(studentsData).length === 0 && Object.keys(classData.c_students).length > 0 && (
+                                            <div className="text-center text-white/60 text-sm py-2">
+                                                กำลังโหลดข้อมูลนักเรียน...
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             ) : (
-                                <p className="text-sm text-white/60 mt-3">ยังไม่มีนักเรียนในห้องเรียนนี้</p>
+                                <div className="text-center py-6">
+                                    <div className="w-12 h-12 bg-[#2D4A5B] rounded-full flex items-center justify-center mx-auto mb-3">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white/60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+                                        </svg>
+                                    </div>
+                                    <p className="text-sm text-white/60">ยังไม่มีนักเรียนในห้องเรียนนี้</p>
+                                    <p className="text-xs text-white/40 mt-1">นักเรียนสามารถเข้าร่วมด้วยรหัส: class-{classData.c_id}</p>
+                                </div>
                             )}
                         </div>
                     </div>
@@ -725,6 +852,7 @@ export default function Class() {
 
                             {/* New homework */}
                             <button
+                                onClick={() => setShowAddHomeworkModal(true)}
                                 className="rounded-md bg-[#002D4A] px-6 md:px-10 py-1 text-sm/6 text-white hover:text-[#80ED99] font-bold shadow-xs cursor-pointer border-[#002D4A] border-2 hover:border-[#80ED99] transition-all duration-300"
                             >
                                 เพิ่มชุดฝึก
@@ -735,17 +863,61 @@ export default function Class() {
 
                         {/* Homework List */}
                         <div>
-                            {classData.c_homework && Object.keys(classData.c_homework).length > 0 ? (
+                            {classHomework && classHomework.length > 0 ? (
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {Object.entries(classData.c_homework).map(([key, value]: [string, HomeworkItem]) => (
-                                        <div key={key} className="bg-[#2D4A5B] p-4 rounded-lg">
-                                            <h3 className="font-bold">{value.title}</h3>
-                                            <p className="text-sm text-gray-300 mt-1">{value.description}</p>
+                                    {classHomework.map((homework: HomeworkItem) => (
+                                        <div key={homework.h_id} className="bg-[#2D4A5B] p-4 rounded-lg border border-[#203D4F] hover:border-[#80ED99] transition-all duration-300">
+                                            <div className="flex justify-between items-start mb-3">
+                                                <h3 className="font-bold text-white line-clamp-2">{homework.h_name}</h3>
+                                                <div className={`text-xs px-2 py-1 rounded-full ${homework.checkType === 'AI' ? 'bg-blue-500/20 text-blue-400' : 'bg-orange-500/20 text-orange-400'}`}>
+                                                    {homework.checkType === 'AI' ? 'AI ตรวจ' : 'ครูตรวจ'}
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="space-y-1 text-sm mb-4">
+                                                <div className="flex">
+                                                    <span className="text-[#80ED99] w-16">วิชา:</span>
+                                                    <span className="text-white/80">{homework.h_subject}</span>
+                                                </div>
+                                                <div className="flex">
+                                                    <span className="text-[#80ED99] w-16">ประเภท:</span>
+                                                    <span className="text-white/80">{homework.h_type}</span>
+                                                </div>
+                                                <div className="flex">
+                                                    <span className="text-[#80ED99] w-16">คะแนน:</span>
+                                                    <span className="text-white/80">{homework.h_score} คะแนน</span>
+                                                </div>
+                                                {homework.h_content?.metadata && (
+                                                    <div className="flex">
+                                                        <span className="text-[#80ED99] w-16">จำนวน:</span>
+                                                        <span className="text-white/80">{homework.h_content.metadata.total_questions} ข้อ</span>
+                                                    </div>
+                                                )}
+                                                <div className="flex">
+                                                    <span className="text-[#80ED99] w-16">Bloom's:</span>
+                                                    <span className="text-white/80 text-xs line-clamp-2">{homework.h_bloom_taxonomy}</span>
+                                                </div>
+                                            </div>
+
+                                            <button
+                                                onClick={() => handleViewProgress(homework.h_id, homework.h_name)}
+                                                className="w-full py-2 px-4 bg-[#80ED99] hover:bg-[#80ED99]/80 text-[#203D4F] font-semibold rounded-lg transition-colors duration-300 cursor-pointer"
+                                            >
+                                                ดูความคืบหน้า
+                                            </button>
                                         </div>
                                     ))}
                                 </div>
                             ) : (
-                                <p className="text-sm text-white/60 mt-3">ยังไม่มีชุดฝึกในห้องเรียนนี้</p>
+                                <div className="text-center py-8">
+                                    <p className="text-white/60 text-sm mb-4">ยังไม่มีชุดฝึกในห้องเรียนนี้</p>
+                                    <button
+                                        onClick={() => setShowAddHomeworkModal(true)}
+                                        className="inline-flex items-center px-4 py-2 bg-[#80ED99] hover:bg-[#80ED99]/80 text-[#203D4F] font-semibold rounded-lg transition-colors duration-300 cursor-pointer"
+                                    >
+                                        + เพิ่มชุดฝึกแรก
+                                    </button>
+                                </div>
                             )}
                         </div>
                     </div>
@@ -849,6 +1021,28 @@ export default function Class() {
                         confirmButtonText="ยืนยันการลบ"
                         cancelButtonText="ยกเลิก"
                     />
+
+                    {/* Add Homework to Class Modal */}
+                    <AddHomeworkToClassModal
+                        isOpen={showAddHomeworkModal}
+                        onClose={() => setShowAddHomeworkModal(false)}
+                        classId={classId}
+                        onSuccess={handleHomeworkRefresh}
+                    />
+
+                    {/* Homework Progress Modal */}
+                    {selectedHomeworkProgress && (
+                        <HomeworkProgressModal
+                            isOpen={showProgressModal}
+                            onClose={() => {
+                                setShowProgressModal(false);
+                                setSelectedHomeworkProgress(null);
+                            }}
+                            classId={classId}
+                            homeworkId={selectedHomeworkProgress.id}
+                            homeworkName={selectedHomeworkProgress.name}
+                        />
+                    )}
                 </div>
             )}
         </div>
