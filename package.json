@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@fortawesome/fontawesome-svg-core": "^6.7.2",
     "@fortawesome/free-brands-svg-icons": "^6.7.2",
     "@fortawesome/free-regular-svg-icons": "^6.7.2",
     "@fortawesome/free-solid-svg-icons": "^6.7.2",
@@ -21,21 +22,23 @@
     "@types/sanitize-html": "^2.15.0",
     "animejs": "^4.0.0",
     "axios": "^1.10.0",
+    "chart.js": "^4.5.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^3.0.1",
     "katex": "^0.16.22",
     "next": "15.2.4",
     "react": "^19.0.0",
+    "react-chartjs-2": "^5.3.0",
     "react-dom": "^19.0.0",
     "sanitize-html": "^2.16.0",
     "swapy": "^1.0.5"
   },
   "devDependencies": {
-    "typescript": "^5",
+    "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@tailwindcss/postcss": "^4",
-    "tailwindcss": "^4"
+    "tailwindcss": "^4",
+    "typescript": "^5"
   }
 }

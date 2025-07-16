@@ -440,12 +440,13 @@ async function getActivities(): Promise<any> {
         // Get completed homework from history table
         const { data: historyData, error: historyError } = await supabase
             .from("history")
-            .select("his_id, his_cid, his_semail, his_temail, his_time")
+            .select("*")
             .eq("his_temail", userData.t_email)
             .order("his_time", { ascending: false })
             .limit(100);
 
-        console.log("History query result:", { historyData, historyError, userEmail: userData.t_email });
+        console.log("History data fetched:", historyData);
+        console.log("History fetch error:", historyError);
 
         // Also check if there's any data in history table at all
         const { data: allHistoryData, error: allHistoryError } = await supabase
@@ -453,16 +454,12 @@ async function getActivities(): Promise<any> {
             .select("*")
             .limit(5);
 
-        console.log("All history data sample:", { allHistoryData, allHistoryError });
-
         // Let's also check if we can find any actives data for this teacher
         const { data: activesCheck, error: activesCheckError } = await supabase
             .from("actives")
-            .select("a_id, a_status, a_temail")
+            .select("*")
             .eq("a_temail", userData.t_email)
             .limit(5);
-
-        console.log("Actives check for teacher:", { activesCheck, activesCheckError });
 
         if (historyError) {
             console.error("History fetch error:", historyError);
@@ -528,7 +525,7 @@ async function getActivities(): Promise<any> {
             // Fetch student details
             const { data: studentData } = await supabase
                 .from("students")
-                .select("s_id, s_name, s_email")
+                .select("s_id, s_username, s_email, s_fullname")
                 .in("s_id", Array.from(studentIds));
 
             // Create lookup maps
@@ -555,10 +552,13 @@ async function getActivities(): Promise<any> {
                     a_sid: active.a_sid,
                     a_status: active.a_status,
                     a_date: new Date().toISOString(), // Use current date as fallback
+                    a_time: new Date().toISOString(),
                     homework_name: homework?.h_name || `ชุดฝึก ${homeworkId}`,
                     homework_subject: homework?.h_subject || 'ไม่ระบุวิชา',
                     class_name: classs?.c_name || `ห้องเรียน ${active.a_cid}`,
-                    student_name: student?.s_name || 'ไม่ระบุชื่อ',
+                    student_name: student?.s_fullname || 'ไม่ระบุชื่อ',
+                    student_username: student?.s_username || 'ไม่ระบุ username',
+                    student_id: student?.s_id || active.a_sid,
                     student_email: student?.s_email || 'ไม่ระบุอีเมล'
                 };
             });
@@ -571,22 +571,58 @@ async function getActivities(): Promise<any> {
             };
         }
 
-        // Get unique homework IDs, class IDs, and student emails
-        const homeworkIds = new Set<number>();
+        // Get unique homework IDs, class IDs, and student identifiers
+        const activesIds = new Set<number>();
         const classIds = new Set<number>();
-        const studentEmails = new Set<string>();
+        const studentIdentifiers = new Set<string>();
 
         historyData.forEach(history => {
-            homeworkIds.add(history.his_id);
+            console.log("History entry:", history);
+            // Use his_aid to find actives
+            if (history.his_aid) {
+                activesIds.add(history.his_aid);
+            }
             classIds.add(history.his_cid);
-            studentEmails.add(history.his_semail);
+            studentIdentifiers.add(history.his_semail);
         });
 
-        // Fetch homework details
-        const { data: homeworkData } = await supabase
+        // Fetch actives data using his_aid
+        const { data: activesData, error: activesError } = await supabase
+            .from("actives")
+            .select("a_id, a_homework")
+            .in("a_id", Array.from(activesIds));
+
+        console.log("Actives IDs to search:", Array.from(activesIds));
+        console.log("Fetched actives data:", activesData);
+        console.log("Actives fetch error:", activesError);
+
+        // Extract homework IDs from actives data
+        const homeworkIds = new Set<number>();
+        const activesMap = new Map();
+
+        activesData?.forEach(active => {
+            let homeworkId;
+            if (typeof active.a_homework === 'object' && active.a_homework?.id) {
+                homeworkId = active.a_homework.id;
+            } else if (typeof active.a_homework === 'number') {
+                homeworkId = active.a_homework;
+            }
+            
+            if (homeworkId) {
+                homeworkIds.add(homeworkId);
+                activesMap.set(active.a_id, homeworkId);
+            }
+        });
+
+        // Fetch homework details using homework IDs from actives
+        const { data: homeworkData, error: homeworkError } = await supabase
             .from("homework")
-            .select("h_id, h_name, h_subject")
+            .select("h_id, h_name, h_subject, h_score, h_type, h_bloom_taxonomy, h_temail")
             .in("h_id", Array.from(homeworkIds));
+
+        console.log("Homework IDs to search:", Array.from(homeworkIds));
+        console.log("Fetched homework data:", homeworkData);
+        console.log("Homework fetch error:", homeworkError);
 
         // Fetch class details
         const { data: classData } = await supabase
@@ -594,33 +630,67 @@ async function getActivities(): Promise<any> {
             .select("c_id, c_name")
             .in("c_id", Array.from(classIds));
 
-        // Fetch student details
-        const { data: studentData } = await supabase
+        // Try to fetch student details by both email and ID since his_semail might contain either
+        const studentIdentifierArray = Array.from(studentIdentifiers);
+        
+        // First try by email
+        const { data: studentDataByEmail } = await supabase
             .from("students")
-            .select("s_id, s_name, s_email")
-            .in("s_email", Array.from(studentEmails));
+            .select("s_id, s_username, s_email, s_fullname")
+            .in("s_email", studentIdentifierArray);
+
+        // Then try by ID (convert string IDs to numbers)
+        const numericIds = studentIdentifierArray.filter(id => !isNaN(Number(id))).map(id => Number(id));
+        const { data: studentDataById } = await supabase
+            .from("students")
+            .select("s_id, s_username, s_email, s_fullname")
+            .in("s_id", numericIds);
+
+        // Combine both results
+        const studentData = [...(studentDataByEmail || []), ...(studentDataById || [])];
 
         // Create lookup maps
         const homeworkMap = new Map(homeworkData?.map(hw => [hw.h_id, hw]) || []);
         const classMap = new Map(classData?.map(cls => [cls.c_id, cls]) || []);
-        const studentMap = new Map(studentData?.map(std => [std.s_email, std]) || []);
+        
+        // Create student maps for both email and ID lookups
+        const studentMapByEmail = new Map(studentData?.map(std => [std.s_email, std]) || []);
+        const studentMapById = new Map(studentData?.map(std => [std.s_id.toString(), std]) || []);
 
         // Format the data for display
         const formattedActivities = historyData.map(history => {
-            const homework = homeworkMap.get(history.his_id);
+            // Get homework ID from actives using his_aid
+            const homeworkId = activesMap.get(history.his_aid);
+            const homework = homeworkMap.get(homeworkId);
             const classs = classMap.get(history.his_cid);
-            const student = studentMap.get(history.his_semail);
+            
+            // Try to find student by email first, then by ID
+            let student = studentMapByEmail.get(history.his_semail);
+            if (!student) {
+                student = studentMapById.get(history.his_semail);
+            }
+
+            console.log("========================================================================================")
+            console.log("Active ID (his_aid):", history.his_aid, "Homework ID from actives:", homeworkId, "Homework found:", homework)
+            console.log("========================================================================================")
 
             return {
                 a_id: history.his_id,
                 a_cid: history.his_cid,
                 a_semail: history.his_semail,
                 a_status: "done",
-                a_date: history.his_time,
-                homework_name: homework?.h_name || `ชุดฝึก ${history.his_id}`,
+                h_date: history.his_time,
+                h_time: history.his_time,
+                homework_name: homework?.h_name || `ชุดฝึก ${homeworkId || 'ไม่ทราบ'}`,
                 homework_subject: homework?.h_subject || 'ไม่ระบุวิชา',
+                homework_score: homework?.h_score || 0,
+                homework_type: homework?.h_type || 'ไม่ระบุประเภท',
+                homework_bloom_taxonomy: homework?.h_bloom_taxonomy || 'ไม่ระบุ',
+                homework_teacher_email: homework?.h_temail || 'ไม่ระบุ',
                 class_name: classs?.c_name || `ห้องเรียน ${history.his_cid}`,
-                student_name: student?.s_name || 'ไม่ระบุชื่อ',
+                student_name: student?.s_fullname || 'ไม่ระบุชื่อ',
+                student_username: student?.s_username || 'ไม่ระบุ username',
+                student_id: student?.s_id || 'ไม่ระบุ ID',
                 student_email: student?.s_email || history.his_semail
             };
         });

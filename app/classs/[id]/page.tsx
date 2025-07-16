@@ -16,7 +16,7 @@ import { formatText, insertLink, updateHiddenInput } from "@/utils/richTextEdito
 import { createNews, deleteNews, getNewsByClassId, updateNews } from "@/app/action/news";
 import ConfirmationModal2 from "@/app/component/modal2";
 import { getStudentID } from "@/app/action/students";
-import { getActivesByClassId } from "@/app/action/actives";
+import { getActivesByClassId } from "@/app/action/history";
 import AddHomeworkToClassModal from "../add_homework_to_class_modal";
 import HomeworkProgressModal from "../homework_progress_modal";
 import ConfirmationModal from "@/app/component/modal1";

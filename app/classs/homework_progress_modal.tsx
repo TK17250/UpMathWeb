@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { getHomeworkProgress, removeHomeworkFromClass } from '@/app/action/actives';
+import { getHomeworkProgress, removeHomeworkFromClass } from '@/app/action/history';
 import { getStudentID } from '../action/students';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';

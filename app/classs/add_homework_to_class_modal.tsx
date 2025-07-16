@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { addHomeworkToClass } from '@/app/action/actives';
+import { addHomeworkToClass } from '@/app/action/history';
 import { getHomework } from '@/app/action/homework';
 
 interface HomeworkData {
