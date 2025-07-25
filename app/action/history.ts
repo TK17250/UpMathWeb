@@ -326,7 +326,7 @@ async function getHomeworkProgress(classId: number, homeworkId: number): Promise
             return [];
         }
 
-        // Get student emails from actives
+        // Get student IDs from actives
         const studentIds = homeworkActives.map(active => active.a_sid);
 
         // Get student details
@@ -339,12 +339,32 @@ async function getHomeworkProgress(classId: number, homeworkId: number): Promise
             console.error("Students fetch error:", studentsError);
         }
 
-        // Combine all data
+        // Get submission times from history table for completed homework
+        const completedActiveIds = homeworkActives
+            .filter(active => active.a_status === 'done')
+            .map(active => active.a_id);
+
+        let historyData: { his_aid: number; his_time: string }[] = [];
+        if (completedActiveIds.length > 0) {
+            const { data: history, error: historyError } = await supabase
+                .from("history")
+                .select("his_aid, his_time")
+                .in("his_aid", completedActiveIds);
+
+            if (!historyError && history) {
+                historyData = history;
+            }
+        }
+
+        // Combine all data and show progress for all students
         const result = homeworkActives.map(active => {
             const studentData = students?.find(student => student.s_id === active.a_sid);
+            const submissionTime = historyData.find(h => h.his_aid === active.a_id)?.his_time;
             
             return {
                 ...active,
+                a_type: 'homework', // Add type for consistency
+                a_submission_time: submissionTime || null,
                 students: studentData || { s_id: active.a_sid, s_fullname: null, s_email: null },
             };
         });
@@ -710,10 +730,125 @@ async function getActivities(): Promise<any> {
     }
 }
 
+// Get individual history detail
+async function getHistoryDetail(historyId: string): Promise<any> {
+    try {
+        const supabase = await createSupabaseServerClient();
+        const userData = await getUserData();
+        
+        if (!userData) {
+            return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลผู้ใช้", type: "error" };
+        }
+
+        // First, try to get from history table
+        const { data: historyData, error: historyError } = await supabase
+            .from("history")
+            .select("*")
+            .eq("his_id", historyId)
+            .eq("his_temail", userData.t_email)
+            .single();
+
+        if (historyError) {
+            console.error("History detail fetch error:", historyError);
+            return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลประวัติ", type: "error" };
+        }
+
+        // Get active data using his_aid
+        const { data: activeData, error: activeError } = await supabase
+            .from("actives")
+            .select("a_id, a_sid, a_homework, a_status")
+            .eq("a_id", historyData.his_aid)
+            .single();
+
+        if (activeError) {
+            console.error("Active data fetch error:", activeError);
+        }
+
+        // Get homework details
+        let homeworkId;
+        if (activeData?.a_homework) {
+            if (typeof activeData.a_homework === 'object' && activeData.a_homework?.id) {
+                homeworkId = activeData.a_homework.id;
+            } else if (typeof activeData.a_homework === 'number') {
+                homeworkId = activeData.a_homework;
+            }
+        }
+
+        let homeworkData = null;
+        if (homeworkId) {
+            const { data: homework, error: homeworkError } = await supabase
+                .from("homework")
+                .select("h_id, h_name, h_subject, h_score, h_type, h_bloom_taxonomy, h_content")
+                .eq("h_id", homeworkId)
+                .single();
+
+            if (!homeworkError) {
+                homeworkData = homework;
+            }
+        }
+
+        // Get class details
+        const { data: classData, error: classError } = await supabase
+            .from("classs")
+            .select("c_id, c_name")
+            .eq("c_id", historyData.his_cid)
+            .single();
+
+        // Get student details
+        const { data: studentData, error: studentError } = await supabase
+            .from("students")
+            .select("s_id, s_fullname, s_email, s_username")
+            .eq("s_email", historyData.his_semail)
+            .single();
+
+        // If not found by email, try by ID
+        let student = studentData;
+        if (!student && !isNaN(Number(historyData.his_semail))) {
+            const { data: studentById } = await supabase
+                .from("students")
+                .select("s_id, s_fullname, s_email, s_username")
+                .eq("s_id", Number(historyData.his_semail))
+                .single();
+            student = studentById;
+        }
+
+        // Combine all data
+        const result = {
+            a_id: activeData?.a_id || historyData.his_aid,
+            a_sid: activeData?.a_sid || student?.s_id,
+            a_homework: activeData?.a_homework || null,
+            a_status: activeData?.a_status || 'done',
+            a_submission_time: historyData.his_time,
+            student_name: student?.s_fullname || 'ไม่มีข้อมูล',
+            student_username: student?.s_username || 'ไม่มีข้อมูล',
+            student_email: student?.s_email || historyData.his_semail,
+            homework_name: homeworkData?.h_name || 'ไม่มีข้อมูล',
+            homework_subject: homeworkData?.h_subject || 'ไม่มีข้อมูล',
+            homework_content: homeworkData?.h_content || activeData?.a_homework?.content || null,
+            class_name: classData?.c_name || 'ไม่มีข้อมูล',
+            history_time: historyData.his_time
+        };
+
+        return {
+            type: "success",
+            data: result
+        };
+
+    } catch (error: any) {
+        console.log("Server error: ", error.message);
+        return { 
+            title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์", 
+            message: error.message, 
+            type: "error" 
+        };
+    }
+}
+
 export {
     addHomeworkToClass,
     getActivesByClassId,
     getHomeworkProgress,
     removeHomeworkFromClass,
     getActivities,
+    getHistoryDetail,
 };

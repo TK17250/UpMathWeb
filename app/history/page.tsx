@@ -130,7 +130,7 @@ export default function History() {
                   {activities.length > 0 ? (
                     <div className="space-y-4">
                       {activities.map((activity, index) => (
-                        <div key={index} className="bg-[#203D4F] rounded-xl p-6 border-4 border-[#2D4A5B] hover:border-[#80ED99] transition-all duration-300 cursor-pointer">
+                        <div key={index} className="bg-[#203D4F] rounded-xl p-6 border-4 border-[#2D4A5B] hover:border-[#80ED99] transition-all duration-300">
                           <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center space-x-4">
                               <div className="flex items-center space-x-2">
@@ -142,8 +142,16 @@ export default function History() {
                               </div>
                             </div>
                             <div className="text-right">
-                              <div className="px-3 py-1 rounded-full text-sm font-medium bg-green-500/20 text-green-400">
-                                เสร็จสิ้น
+                              <div className="flex items-center space-x-2">
+                                <div className="px-3 py-1 rounded-full text-sm font-medium bg-green-500/20 text-green-400">
+                                  เสร็จสิ้น
+                                </div>
+                                <button
+                                  onClick={() => router.push(`/history/${activity.a_id}`)}
+                                  className="px-3 py-1 rounded-full text-sm font-medium bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors duration-200 cursor-pointer"
+                                >
+                                  ดูรายละเอียด
+                                </button>
                               </div>
                               <div className="text-xs text-white/60 mt-1">
                                 {formatDateTime(activity.h_time || activity.a_time).date}
