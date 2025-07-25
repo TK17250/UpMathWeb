@@ -7,6 +7,7 @@ import { getUser } from "../action/getuser"
 import { useRouter } from "next/navigation"
 import { googleLogin, login } from "../auth/auth"
 import Alert1, { AlertType } from "../component/alert1"
+import Disclaimer from "../component/disclaimer"
 
 const Alert = {
   title: "",
@@ -69,7 +70,12 @@ export default function Login() {
 
   return (
     <>
-      <div className="flex min-h-full flex-1 flex-col justify-center py-12 sm:px-6 lg:px-8 h-screen overflow-hidden">
+      <div className="flex min-h-full flex-1 flex-col justify-center py-12 sm:px-6 lg:px-8 h-screen overflow-hidden relative">
+        {/* Disclaimer Button - Top Right */}
+        <div className="absolute top-4 right-4 z-10">
+          <Disclaimer />
+        </div>
+
         {/* Alert */}
         <Alert1 />
 
