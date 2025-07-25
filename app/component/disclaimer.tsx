@@ -16,6 +16,8 @@
  */
 
 "use client";
+import { faTimes } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -43,7 +45,7 @@ export default function Disclaimer({ className = '' }: DisclaimerProps) {
             {/* Question Mark Button */}
             <button
                 onClick={handleOpen}
-                className={`group relative w-10 h-10 rounded-full bg-[#203D4F]/80 hover:bg-[#203D4F] border border-[#80ED99]/30 hover:border-[#80ED99]/50 transition-all duration-300 flex items-center justify-center ${className}`}
+                className={`group relative w-10 h-10 rounded-full bg-[#203D4F]/80 hover:bg-[#203D4F] border border-[#80ED99]/30 hover:border-[#80ED99]/50 transition-all duration-300 flex items-center justify-center ${className} cursor-pointer`}
                 title="ข้อตกลงในการใช้งาน"
             >
                 <span className="text-lg font-bold text-[#80ED99] group-hover:text-white group-hover:scale-110 transition-all duration-300">?</span>
@@ -60,10 +62,10 @@ export default function Disclaimer({ className = '' }: DisclaimerProps) {
                             </h2>
                             <button
                                 onClick={handleClose}
-                                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-lg transition-all duration-300 group"
+                                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-lg transition-all duration-300 group cursor-pointer"
                                 title="ปิดหน้าต่าง"
                             >
-                                <span className="text-xl font-bold group-hover:scale-110 transition-transform duration-200">×</span>
+                                <FontAwesomeIcon icon={faTimes} className="text-xl font-bold group-hover:scale-110 transition-transform duration-200" />
                             </button>
                         </div>
 

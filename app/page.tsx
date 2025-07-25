@@ -84,15 +84,17 @@ export default function Home() {
   }, [user]);
 
   return (
-    <div className="overflow-hidden h-screen">
+    <div className="h-screen flex flex-col overflow-hidden">
       {user && (
-        <div className="h-full w-11/12 justify-center m-auto flex flex-col">
+        <div className="flex flex-col h-full w-11/12 mx-auto">
           {/* Navbar */}
           <Navbar />
 
-          <div className="flex flex-col lg:flex-row h-full lg:h-auto">
+          <div className="flex flex-grow flex-col lg:flex-row overflow-hidden relative">
             {/* Sidebar */}
-            <Sidebar />
+            <div className="w-full lg:w-auto lg:flex-shrink-0">
+              <Sidebar />
+            </div>
 
             {/* Content */}
             <div className="bg-[#2D4A5B] mt-5 mb-5 lg:mb-0 rounded-xl w-full h-full lg:h-auto border-4 border-[#203D4F] p-5 overflow-y-auto">
