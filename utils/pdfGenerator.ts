@@ -9,7 +9,6 @@ interface Question {
     question: string;
     question_type: string;
     options?: string[];
-    correct_answer: string;
     correct_option_index?: number;
     explanation: string;
     score: number;
@@ -256,7 +255,7 @@ export const generatePDF = async (data: QuestionsData, includeAnswers: boolean =
                 currentY += 6;
                 
                 doc.setFont('THSarabunNew', 'normal');
-                const answerLines = await splitTextToLines(doc, question.correct_answer, contentWidth - 10);
+                const answerLines = await splitTextToLines(doc, question.options ? question.options[question.correct_option_index || 0] : 'ไม่มีคำตอบ', contentWidth - 10);
                 answerLines.forEach((line: string) => {
                     if (currentY > pageHeight - 20) {
                         doc.addPage();
