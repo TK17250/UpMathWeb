@@ -1,11 +1,13 @@
 'use client';
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, use } from "react";
 import { getUser } from "../../action/getuser";
 import { getHistoryDetail } from "../../action/history";
 import Navbar from "../../component/navbar";
 import Sidebar from "../../component/sidebar";
 import Footer from "../../component/footer";
+import ChartBar from "../../component/chart-bar";
+import { MathText } from "../../../utils/katexRenderer";
 
 interface StudentHomeworkDetail {
     a_id: number;
@@ -25,11 +27,23 @@ interface StudentHomeworkDetail {
     history_time?: string;
 }
 
-export default function HistoryDetail({ params }: { params: { historyId: string } }) {
+interface QuestionStatistic {
+    questionNumber: number;
+    question: string;
+    totalAttempts: number;
+    correctAnswers: number;
+    incorrectAnswers: number;
+    accuracy: number;
+    commonWrongAnswers: { answer: string; count: number }[];
+}
+
+export default function StudentStatisticsDashboard({ params }: { params: Promise<{ historyId: string }> }) {
     const [user, setUser] = useState<any>(null);
     const [historyDetail, setHistoryDetail] = useState<StudentHomeworkDetail | null>(null);
+    const [questionStats, setQuestionStats] = useState<QuestionStatistic[]>([]);
     const [loading, setLoading] = useState(true);
     const router = useRouter();
+    const resolvedParams = use(params);
 
     // Check login
     useEffect(() => {
@@ -42,15 +56,64 @@ export default function HistoryDetail({ params }: { params: { historyId: string 
         });
     }, [router]);
 
-    // Get history detail
+    // Generate question statistics
+    const generateQuestionStatistics = (homeworkData: StudentHomeworkDetail): QuestionStatistic[] => {
+        const studentQuestions = homeworkData.a_homework?.content?.questions || [];
+        const homeworkQuestions = homeworkData.homework_content?.questions || [];
+
+        return studentQuestions.map((studentQuestion: any, index: number) => {
+            // Find matching homework question by id or use index
+            const homeworkQuestion = homeworkQuestions.find((hq: any) => hq.id === studentQuestion.id) || homeworkQuestions[index];
+            
+            let isCorrect = false;
+            let wrongAnswer = '';
+
+            if (studentQuestion.question_type === 'multiple_choice' && homeworkQuestion) {
+                const studentSelectedIndex = studentQuestion.selected_option_index;
+                const correctIndex = homeworkQuestion.correct_option_index;
+                isCorrect = studentSelectedIndex === correctIndex;
+                
+                if (!isCorrect) {
+                    wrongAnswer = studentQuestion.selected_answer || studentQuestion.options?.[studentSelectedIndex] || 'ไม่ได้ตอบ';
+                }
+            } else if ((studentQuestion.question_type === 'fill_in_blank' || homeworkQuestion?.question_type === 'fill_in_blank') && homeworkQuestion) {
+                const studentAnswer = studentQuestion.selected_answer || studentQuestion.answer;
+                const correctAnswer = homeworkQuestion.correct_answer;
+                isCorrect = studentAnswer?.toLowerCase()?.trim() === correctAnswer?.toLowerCase()?.trim();
+                
+                if (!isCorrect) {
+                    wrongAnswer = studentAnswer || 'ไม่ได้ตอบ';
+                }
+            }
+
+            // For demonstration, we're showing statistics for this single submission
+            // In a real application, you would aggregate data from multiple students
+            return {
+                questionNumber: index + 1,
+                question: studentQuestion.question || homeworkQuestion?.question || `ข้อที่ ${index + 1}`,
+                totalAttempts: 1, // This would be the count of all students who attempted this question
+                correctAnswers: isCorrect ? 1 : 0,
+                incorrectAnswers: isCorrect ? 0 : 1,
+                accuracy: isCorrect ? 100 : 0,
+                commonWrongAnswers: isCorrect ? [] : [{ 
+                    answer: wrongAnswer,
+                    count: 1
+                }]
+            };
+        });
+    };
+
+    // Get history detail and generate statistics
     useEffect(() => {
         const fetchHistoryDetail = async () => {
             try {
                 setLoading(true);
-                const result = await getHistoryDetail(params.historyId);
+                const result = await getHistoryDetail(resolvedParams.historyId);
                 
                 if (result.type === 'success') {
                     setHistoryDetail(result.data);
+                    const stats = generateQuestionStatistics(result.data);
+                    setQuestionStats(stats);
                 } else {
                     console.error("History detail fetch error:", result);
                 }
@@ -64,7 +127,7 @@ export default function HistoryDetail({ params }: { params: { historyId: string 
         if (user) {
             fetchHistoryDetail();
         }
-    }, [user, params.historyId]);
+    }, [user, resolvedParams.historyId]);
 
     if (!user || loading) {
         return (
@@ -85,6 +148,18 @@ export default function HistoryDetail({ params }: { params: { historyId: string 
         );
     }
 
+    const calculateOverallStats = () => {
+        if (!questionStats.length) return { accuracy: 0, totalQuestions: 0, correctAnswers: 0 };
+        
+        const totalQuestions = questionStats.length;
+        const correctAnswers = questionStats.reduce((sum, stat) => sum + stat.correctAnswers, 0);
+        const accuracy = (correctAnswers / totalQuestions) * 100;
+        
+        return { accuracy, totalQuestions, correctAnswers };
+    };
+
+    const overallStats = calculateOverallStats();
+
     return (
         <div className="overflow-hidden h-screen">
             <div className="h-full w-11/12 justify-center m-auto flex flex-col">
@@ -100,9 +175,9 @@ export default function HistoryDetail({ params }: { params: { historyId: string 
                         {/* Header */}
                         <div className="flex items-center justify-between mb-6">
                             <div>
-                                <h1 className="text-2xl font-bold text-white">รายละเอียดการส่งงาน</h1>
+                                <h1 className="text-2xl font-bold text-white">สถิติการทำข้อสอบ</h1>
                                 <p className="text-[#80ED99] mt-1">
-                                    {historyDetail?.homework_name || 'ไม่มีข้อมูล'}
+                                    {historyDetail?.homework_name || 'กำลังโหลด...'} - {historyDetail?.student_name || 'นักเรียน'}
                                 </p>
                             </div>
                             <button
@@ -113,110 +188,107 @@ export default function HistoryDetail({ params }: { params: { historyId: string 
                             </button>
                         </div>
 
-                        {historyDetail && (
-                            <div className="space-y-6">
-                                {/* Student Info */}
-                                <div className="bg-[#203D4F] p-6 rounded-lg border-4 border-[#2D4A5B]">
-                                    <h2 className="text-xl font-semibold text-white mb-4">ข้อมูลนักเรียน</h2>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div>
-                                            <span className="text-[#80ED99] text-sm">ชื่อ-นามสกุล:</span>
-                                            <p className="text-white font-medium">{historyDetail.student_name || 'ไม่มีข้อมูล'}</p>
-                                        </div>
-                                        <div>
-                                            <span className="text-[#80ED99] text-sm">อีเมล:</span>
-                                            <p className="text-white">{historyDetail.student_email || `ID: ${historyDetail.a_sid}`}</p>
-                                        </div>
-                                        <div>
-                                            <span className="text-[#80ED99] text-sm">ชื่อผู้ใช้:</span>
-                                            <p className="text-white">{historyDetail.student_username || 'ไม่มีข้อมูล'}</p>
-                                        </div>
-                                        <div>
-                                            <span className="text-[#80ED99] text-sm">ห้องเรียน:</span>
-                                            <p className="text-white">{historyDetail.class_name || 'ไม่มีข้อมูล'}</p>
-                                        </div>
-                                    </div>
-                                </div>
+                        {/* Overall Statistics */}
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+                            <div className="bg-[#203D4F] p-6 rounded-lg border-4 border-[#2D4A5B] text-center">
+                                <div className="text-3xl font-bold text-[#80ED99] mb-2">{overallStats.totalQuestions}</div>
+                                <div className="text-white text-sm">จำนวนข้อทั้งหมด</div>
+                            </div>
+                            <div className="bg-[#203D4F] p-6 rounded-lg border-4 border-[#2D4A5B] text-center">
+                                <div className="text-3xl font-bold text-green-400 mb-2">{overallStats.correctAnswers}</div>
+                                <div className="text-white text-sm">ตอบถูก</div>
+                            </div>
+                            <div className="bg-[#203D4F] p-6 rounded-lg border-4 border-[#2D4A5B] text-center">
+                                <div className="text-3xl font-bold text-red-400 mb-2">{overallStats.totalQuestions - overallStats.correctAnswers}</div>
+                                <div className="text-white text-sm">ตอบผิด</div>
+                            </div>
+                            <div className="bg-[#203D4F] p-6 rounded-lg border-4 border-[#2D4A5B] text-center">
+                                <div className="text-3xl font-bold text-blue-400 mb-2">{overallStats.accuracy.toFixed(1)}%</div>
+                                <div className="text-white text-sm">ความแม่นยำ</div>
+                            </div>
+                        </div>
 
-                                {/* Homework Info */}
-                                <div className="bg-[#203D4F] p-6 rounded-lg border-4 border-[#2D4A5B]">
-                                    <h2 className="text-xl font-semibold text-white mb-4">ข้อมูลชุดฝึก</h2>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div>
-                                            <span className="text-[#80ED99] text-sm">ชื่อชุดฝึก:</span>
-                                            <p className="text-white font-medium">{historyDetail.homework_name || 'ไม่มีข้อมูล'}</p>
-                                        </div>
-                                        <div>
-                                            <span className="text-[#80ED99] text-sm">วิชา:</span>
-                                            <p className="text-white">{historyDetail.homework_subject || 'ไม่มีข้อมูล'}</p>
-                                        </div>
-                                        <div>
-                                            <span className="text-[#80ED99] text-sm">ประเภทการตรวจ:</span>
-                                            <p className="text-white">{historyDetail.a_homework?.check_type === 'AI' ? 'AI ตรวจ' : 'ครูตรวจ'}</p>
-                                        </div>
-                                        <div>
-                                            <span className="text-[#80ED99] text-sm">จำนวนข้อ:</span>
-                                            <p className="text-white">
-                                                {historyDetail.homework_content?.questions?.length || 
-                                                 historyDetail.a_homework?.content?.questions?.length || 
-                                                 'ไม่มีข้อมูล'} ข้อ
-                                            </p>
-                                        </div>
-                                    </div>
+                        {/* Performance Chart */}
+                        {questionStats.length > 0 && (
+                            <div className="bg-[#203D4F] p-6 rounded-lg border-4 border-[#2D4A5B] mb-6">
+                                <h2 className="text-xl font-semibold text-white mb-4">ความแม่นยำในแต่ละข้อ</h2>
+                                <div className="h-64">
+                                    <ChartBar 
+                                        data={questionStats.map(stat => ({
+                                            name: `ข้อ ${stat.questionNumber}`,
+                                            count: stat.accuracy
+                                        }))} 
+                                        maxItems={questionStats.length}
+                                    />
                                 </div>
+                            </div>
+                        )}
 
-                                {/* Submission Info */}
-                                <div className="bg-[#203D4F] p-6 rounded-lg border-4 border-[#2D4A5B]">
-                                    <h2 className="text-xl font-semibold text-white mb-4">ข้อมูลการส่งงาน</h2>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div>
-                                            <span className="text-[#80ED99] text-sm">สถานะ:</span>
-                                            <p className="font-bold text-lg text-green-400">ส่งงานเรียบร้อยแล้ว</p>
-                                        </div>
-                                        <div>
-                                            <span className="text-[#80ED99] text-sm">วันที่ส่งงาน:</span>
-                                            <p className="text-white">
-                                                {historyDetail.a_submission_time ? 
-                                                    new Date(historyDetail.a_submission_time).toLocaleDateString('th-TH') : 
-                                                    'ไม่มีข้อมูล'
-                                                }
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
+                        {/* Detailed Question Analysis */}
+                        {questionStats.length > 0 && (
+                            <div className="bg-[#203D4F] p-6 rounded-lg border-4 border-[#2D4A5B]">
+                                <h2 className="text-xl font-semibold text-white mb-4">วิเคราะห์รายข้อ</h2>
+                                <div className="space-y-4">
+                                    {questionStats.map((stat, index) => (
+                                        <div key={index} className="bg-[#2D4A5B] p-4 rounded-lg">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <h3 className="text-[#80ED99] font-medium text-lg">ข้อที่ {stat.questionNumber}</h3>
+                                                <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+                                                    stat.accuracy === 100 
+                                                        ? 'bg-green-500/20 text-green-400' 
+                                                        : 'bg-red-500/20 text-red-400'
+                                                }`}>
+                                                    {stat.accuracy}% ความแม่นยำ
+                                                </div>
+                                            </div>
+                                            
+                                            {/* Question Text with KaTeX */}
+                                            <div className="mb-4">
+                                                <div className="text-white font-medium mb-2">คำถาม:</div>
+                                                <div className="text-white bg-[#203D4F] p-3 rounded-lg">
+                                                    <MathText className="text-white">{stat.question}</MathText>
+                                                </div>
+                                            </div>
 
-                                {/* Questions List */}
-                                {(historyDetail.homework_content?.questions || historyDetail.a_homework?.content?.questions) && (
-                                    <div className="bg-[#203D4F] p-6 rounded-lg border-4 border-[#2D4A5B]">
-                                        <h2 className="text-xl font-semibold text-white mb-4">รายละเอียดคำถาม</h2>
-                                        <div className="space-y-6">
-                                            {(historyDetail.homework_content?.questions || historyDetail.a_homework?.content?.questions)?.map((question: any, index: number) => (
-                                                <div key={index} className="bg-[#2D4A5B] p-4 rounded-lg">
-                                                    <div className="flex items-center mb-3">
-                                                        <h3 className="text-[#80ED99] font-medium text-lg">ข้อที่ {index + 1}</h3>
-                                                    </div>
-                                                    <div className="text-white mb-4 text-base" dangerouslySetInnerHTML={{ __html: question.question }}></div>
-                                                    
-                                                    {question.options && (
-                                                        <div className="space-y-2">
-                                                            <p className="text-[#80ED99] text-sm font-medium">ตัวเลือก:</p>
-                                                            {question.options.map((option: any, optIndex: number) => (
-                                                                <div key={optIndex} className="p-3 rounded-lg text-sm bg-gray-700/50 text-gray-300 border border-gray-600/50">
-                                                                    <span className="font-medium">{String.fromCharCode(65 + optIndex)}.</span> {option.text}
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                    
-                                                    <div className="mt-4 text-sm">
-                                                        <span className="text-[#80ED99]">ประเภทคำถาม: </span>
-                                                        <span className="text-white">{question.type || 'ปรนัย'}</span>
+                                            {/* Statistics */}
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                                                <div className="text-center">
+                                                    <div className="text-lg font-bold text-white">{stat.totalAttempts}</div>
+                                                    <div className="text-xs text-white/60">ครั้งที่พยายาม</div>
+                                                </div>
+                                                <div className="text-center">
+                                                    <div className="text-lg font-bold text-green-400">{stat.correctAnswers}</div>
+                                                    <div className="text-xs text-white/60">ตอบถูก</div>
+                                                </div>
+                                                <div className="text-center">
+                                                    <div className="text-lg font-bold text-red-400">{stat.incorrectAnswers}</div>
+                                                    <div className="text-xs text-white/60">ตอบผิด</div>
+                                                </div>
+                                                <div className="text-center">
+                                                    <div className="text-lg font-bold text-blue-400">{stat.accuracy.toFixed(1)}%</div>
+                                                    <div className="text-xs text-white/60">ความแม่นยำ</div>
+                                                </div>
+                                            </div>
+
+                                            {/* Common Wrong Answers */}
+                                            {stat.commonWrongAnswers.length > 0 && (
+                                                <div>
+                                                    <div className="text-white font-medium mb-2">คำตอบที่ผิดบ่อย:</div>
+                                                    <div className="space-y-2">
+                                                        {stat.commonWrongAnswers.map((wrongAnswer, idx) => (
+                                                            <div key={idx} className="bg-[#203D4F] p-2 rounded text-sm">
+                                                                <span className="text-red-400">
+                                                                    <MathText>{wrongAnswer.answer}</MathText>
+                                                                </span>
+                                                                <span className="text-white/60 ml-2">({wrongAnswer.count} ครั้ง)</span>
+                                                            </div>
+                                                        ))}
                                                     </div>
                                                 </div>
-                                            ))}
+                                            )}
                                         </div>
-                                    </div>
-                                )}
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </div>
