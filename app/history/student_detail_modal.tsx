@@ -3,7 +3,7 @@ import { Fragment, useEffect, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { getHistoryDetail } from "../action/history";
-import { MathText, MathDisplay } from "../../utils/katexRenderer";
+import { MathText } from "../../utils/katexRenderer";
 
 interface StudentDetailModalProps {
     isOpen: boolean;
@@ -40,6 +40,8 @@ export default function StudentDetailModal({ isOpen, onClose, activityId, studen
         }
     }, [isOpen, activityId]);
 
+    // No need to fix data since we only use correct_option_index now
+
     const fetchHistoryDetail = async () => {
         try {
             setLoading(true);
@@ -71,37 +73,45 @@ export default function StudentDetailModal({ isOpen, onClose, activityId, studen
     };
 
     const getAnswerStatus = (studentQuestion: any, homeworkQuestion: any) => {
-        // Student question from a_homework.content.questions (what student answered)  
-        // Homework question from homework_content.questions (correct answers from homework table)
+        // Check if questions match by ID first
+        if (studentQuestion.id !== homeworkQuestion?.id) {
+            return {
+                isCorrect: false,
+                correctAnswer: 'คำถามไม่ตรงกัน',
+                studentAnswer: studentQuestion.selected_answer || 'ไม่ได้ตอบ',
+                error: 'Question ID mismatch'
+            };
+        }
         
-        if (studentQuestion.question_type === 'multiple_choice' || homeworkQuestion.question_type === 'multiple_choice') {
+        if (studentQuestion.question_type === 'multiple_choice') {
             const studentSelectedIndex = studentQuestion.selected_option_index;
             const correctIndex = homeworkQuestion.correct_option_index;
             const isCorrect = studentSelectedIndex === correctIndex;
-            
+
             return {
                 isCorrect,
-                correctAnswer: homeworkQuestion.correct_answer || homeworkQuestion.options?.[correctIndex] || 'ไม่พบคำตอบที่ถูก',
+                correctAnswer: homeworkQuestion.options?.[correctIndex] || 'ไม่พบคำตอบที่ถูก',
                 studentAnswer: studentQuestion.selected_answer || studentQuestion.options?.[studentSelectedIndex] || 'ไม่ได้ตอบ',
                 correctIndex,
                 studentSelectedIndex
             };
-        } else if (studentQuestion.question_type === 'fill_in_blank' || homeworkQuestion.question_type === 'fill_in_blank') {
+        } else if (studentQuestion.question_type === 'fill_in_blank') {
             const studentAnswer = studentQuestion.selected_answer || studentQuestion.answer;
-            const correctAnswer = homeworkQuestion.correct_answer;
-            const isCorrect = studentAnswer?.toLowerCase()?.trim() === correctAnswer?.toLowerCase()?.trim();
+            // For fill_in_blank, we cannot determine correctness without correct_answer
+            // Since we're removing correct_answer usage, mark as unable to check
             
             return {
-                isCorrect,
-                correctAnswer: correctAnswer || 'ไม่พบคำตอบที่ถูก',
-                studentAnswer: studentAnswer || 'ไม่ได้ตอบ'
+                isCorrect: false,
+                correctAnswer: 'ไม่รองรับการตรวจอัตนัย',
+                studentAnswer: studentAnswer || 'ไม่ได้ตอบ',
+                error: 'Cannot check fill_in_blank without correct_answer'
             };
         }
         
         return {
             isCorrect: false,
-            correctAnswer: 'ไม่สามารถตรวจสอบได้',
-            studentAnswer: 'ไม่ได้ตอบ'
+            correctAnswer: 'ประเภทคำถามไม่รู้จัก',
+            studentAnswer: studentQuestion.selected_answer || 'ไม่ได้ตอบ'
         };
     };
 
@@ -201,19 +211,27 @@ export default function StudentDetailModal({ isOpen, onClose, activityId, studen
                                                 <h4 className="text-white font-semibold mb-4">รายละเอียดคำถามและคำตอบ</h4>
                                                 <div className="space-y-6">
                                                     {historyDetail.a_homework.content.questions.map((studentQuestion: any, index: number) => {
-                                                        const homeworkQuestion = historyDetail.homework_content.questions.find((hq: any) => hq.id === studentQuestion.id) || historyDetail.homework_content.questions[index];
+                                                        const homeworkQuestion = historyDetail.homework_content.questions.find((hq: any) => hq.id === studentQuestion.id);
                                                         const answerStatus = getAnswerStatus(studentQuestion, homeworkQuestion);
                                                         
                                                         return (
-                                                            <div key={index} className="bg-[#203D4F] p-4 rounded-lg border-l-4 border-[#80ED99]">
+                                                            <div key={index} className={`bg-[#203D4F] p-4 rounded-lg border-l-4 ${
+                                                                answerStatus.error
+                                                                    ? 'border-yellow-500'
+                                                                    : answerStatus.isCorrect 
+                                                                        ? 'border-green-400' 
+                                                                        : 'border-red-400'
+                                                            }`}>
                                                                 <div className="flex items-center justify-between mb-3">
                                                                     <h5 className="text-[#80ED99] font-medium text-lg">ข้อที่ {index + 1}</h5>
                                                                     <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-                                                                        answerStatus.isCorrect 
-                                                                            ? 'bg-green-500/20 text-green-400' 
-                                                                            : 'bg-red-500/20 text-red-400'
+                                                                        answerStatus.error
+                                                                            ? 'bg-yellow-500/20 text-yellow-400'
+                                                                            : answerStatus.isCorrect 
+                                                                                ? 'bg-green-500/20 text-green-400' 
+                                                                                : 'bg-red-500/20 text-red-400'
                                                                     }`}>
-                                                                        {answerStatus.isCorrect ? '✓ ถูก' : '✗ ผิด'}
+                                                                        {answerStatus.error ? '⚠ ข้อมูลไม่ตรง' : answerStatus.isCorrect ? '✓ ถูก' : '✗ ผิด'}
                                                                     </div>
                                                                 </div>
                                                                 
@@ -221,34 +239,48 @@ export default function StudentDetailModal({ isOpen, onClose, activityId, studen
                                                                 <div className="mb-4">
                                                                     <div className="text-white font-medium mb-2">คำถาม:</div>
                                                                     <div className="text-white bg-[#2D4A5B] p-3 rounded-lg">
-                                                                        <MathText className="text-white">{studentQuestion.question || homeworkQuestion.question}</MathText>
+                                                                        <MathText className="text-white">{studentQuestion.question}</MathText>
                                                                     </div>
                                                                 </div>
 
-                                                                {/* Options for multiple choice */}
-                                                                {(studentQuestion.question_type === 'multiple_choice' || homeworkQuestion.question_type === 'multiple_choice') && (studentQuestion.options || homeworkQuestion.options) && (
+                                                                {/* Show error if questions don't match */}
+                                                                {answerStatus.error && (
+                                                                    <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                                                                        <div className="text-yellow-400 text-sm">
+                                                                            ⚠ ไม่พบคำถามที่ตรงกันในชุดข้อสอบ (ID: {studentQuestion.id})
+                                                                        </div>
+                                                                        {homeworkQuestion && (
+                                                                            <div className="text-white/60 text-xs mt-2">
+                                                                                คำถามที่ใกล้เคียง: <MathText>{homeworkQuestion.question}</MathText>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+
+                                                                {/* Options for multiple choice - only show if questions match */}
+                                                                {!answerStatus.error && studentQuestion.question_type === 'multiple_choice' && studentQuestion.options && (
                                                                     <div className="mb-4">
                                                                         <div className="text-white font-medium mb-2">ตัวเลือก:</div>
                                                                         <div className="space-y-2">
-                                                                            {(homeworkQuestion.options || studentQuestion.options).map((option: any, optIndex: number) => (
+                                                                            {studentQuestion.options.map((option: any, optIndex: number) => (
                                                                                 <div 
                                                                                     key={optIndex} 
                                                                                     className={`p-3 rounded-lg text-sm border ${
-                                                                                        optIndex === answerStatus.correctIndex
+                                                                                        optIndex === homeworkQuestion?.correct_option_index
                                                                                             ? 'border-green-500 bg-green-500/10 text-green-400'
-                                                                                            : optIndex === answerStatus.studentSelectedIndex
+                                                                                            : optIndex === studentQuestion.selected_option_index
                                                                                                 ? 'border-red-500 bg-red-500/10 text-red-400'
                                                                                                 : 'border-gray-600 bg-gray-700/50 text-gray-300'
                                                                                     }`}
                                                                                 >
                                                                                     <span className="font-medium">{String.fromCharCode(65 + optIndex)}.</span>
                                                                                     <span className="ml-2">
-                                                                                        <MathText>{typeof option === 'string' ? option : option.text || option}</MathText>
+                                                                                        <MathText>{typeof option === 'string' ? option : option}</MathText>
                                                                                     </span>
-                                                                                    {optIndex === answerStatus.correctIndex && (
+                                                                                    {optIndex === homeworkQuestion?.correct_option_index && (
                                                                                         <span className="ml-2 text-green-400 font-bold">(คำตอบที่ถูก)</span>
                                                                                     )}
-                                                                                    {optIndex === answerStatus.studentSelectedIndex && optIndex !== answerStatus.correctIndex && (
+                                                                                    {optIndex === studentQuestion.selected_option_index && optIndex !== homeworkQuestion?.correct_option_index && (
                                                                                         <span className="ml-2 text-red-400 font-bold">(คำตอบของนักเรียน)</span>
                                                                                     )}
                                                                                 </div>

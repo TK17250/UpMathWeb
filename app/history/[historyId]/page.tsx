@@ -62,36 +62,35 @@ export default function StudentStatisticsDashboard({ params }: { params: Promise
         const homeworkQuestions = homeworkData.homework_content?.questions || [];
 
         return studentQuestions.map((studentQuestion: any, index: number) => {
-            // Find matching homework question by id or use index
-            const homeworkQuestion = homeworkQuestions.find((hq: any) => hq.id === studentQuestion.id) || homeworkQuestions[index];
+            // Find matching homework question by ID only (strict matching)
+            const homeworkQuestion = homeworkQuestions.find((hq: any) => hq.id === studentQuestion.id);
             
             let isCorrect = false;
             let wrongAnswer = '';
 
-            if (studentQuestion.question_type === 'multiple_choice' && homeworkQuestion) {
-                const studentSelectedIndex = studentQuestion.selected_option_index;
-                const correctIndex = homeworkQuestion.correct_option_index;
-                isCorrect = studentSelectedIndex === correctIndex;
-                
-                if (!isCorrect) {
-                    wrongAnswer = studentQuestion.selected_answer || studentQuestion.options?.[studentSelectedIndex] || 'ไม่ได้ตอบ';
+            if (homeworkQuestion && studentQuestion.id === homeworkQuestion.id) {
+                if (studentQuestion.question_type === 'multiple_choice') {
+                    const studentSelectedIndex = studentQuestion.selected_option_index;
+                    const correctIndex = homeworkQuestion.correct_option_index;
+                    isCorrect = studentSelectedIndex === correctIndex;
+                    
+                    if (!isCorrect) {
+                        wrongAnswer = studentQuestion.selected_answer || 'ไม่ได้ตอบ';
+                    }
+                } else if (studentQuestion.question_type === 'fill_in_blank') {
+                    // Cannot check fill_in_blank without correct_answer
+                    isCorrect = false;
+                    wrongAnswer = 'ไม่รองรับการตรวจอัตนัย';
                 }
-            } else if ((studentQuestion.question_type === 'fill_in_blank' || homeworkQuestion?.question_type === 'fill_in_blank') && homeworkQuestion) {
-                const studentAnswer = studentQuestion.selected_answer || studentQuestion.answer;
-                const correctAnswer = homeworkQuestion.correct_answer;
-                isCorrect = studentAnswer?.toLowerCase()?.trim() === correctAnswer?.toLowerCase()?.trim();
-                
-                if (!isCorrect) {
-                    wrongAnswer = studentAnswer || 'ไม่ได้ตอบ';
-                }
+            } else {
+                // No matching question found
+                wrongAnswer = 'ไม่พบคำถามที่ตรงกัน';
             }
 
-            // For demonstration, we're showing statistics for this single submission
-            // In a real application, you would aggregate data from multiple students
             return {
                 questionNumber: index + 1,
-                question: studentQuestion.question || homeworkQuestion?.question || `ข้อที่ ${index + 1}`,
-                totalAttempts: 1, // This would be the count of all students who attempted this question
+                question: studentQuestion.question || `ข้อที่ ${index + 1}`,
+                totalAttempts: 1,
                 correctAnswers: isCorrect ? 1 : 0,
                 incorrectAnswers: isCorrect ? 0 : 1,
                 accuracy: isCorrect ? 100 : 0,
@@ -102,6 +101,8 @@ export default function StudentStatisticsDashboard({ params }: { params: Promise
             };
         });
     };
+
+    // No need to fix data since we only use correct_option_index now
 
     // Get history detail and generate statistics
     useEffect(() => {
