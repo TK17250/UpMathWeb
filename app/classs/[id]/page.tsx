@@ -20,6 +20,8 @@ import { getActivesByClassId } from "@/app/action/history";
 import AddHomeworkToClassModal from "../add_homework_to_class_modal";
 import HomeworkProgressModal from "../homework_progress_modal";
 import ConfirmationModal from "@/app/component/modal1";
+import AddMediaToClassModal from '../add_media_to_class_modal';
+import { getMedia, getMediaID } from "@/app/action/media";
 
 // Define TypeScript interfaces
 interface AlertState {
@@ -126,7 +128,8 @@ export default function Class() {
     const [selectedHomeworkProgress, setSelectedHomeworkProgress] = useState<{id: number, name: string} | null>(null);
     const [classHomework, setClassHomework] = useState<any[]>([]);
     const [studentsData, setStudentsData] = useState<Record<string, any>>({});
-
+    const [showAddMediaModal, setShowAddMediaModal] = useState(false);
+    const [mediaList, setMediaList] = useState<any[]>([]);
     // Check login
     const router = useRouter();
     useEffect(() => {
@@ -269,6 +272,25 @@ export default function Class() {
                 }
             };
             fetchClassHomework();
+        }
+    };
+
+    // Refresh media when modal closes
+    const handleMediaRefresh = () => {
+        if (classId > 0) {
+            const fetchMediaList = async () => {
+                try {
+                    const result = await getMedia();
+                    if (Array.isArray(result)) {
+                        setMediaList(result);
+                    } else if (result?.type === 'error') {
+                        console.error("Media fetch error:", result.message);
+                    }
+                } catch (err: any) {
+                    console.error("Error refreshing media:", err);
+                }
+            };
+            fetchMediaList();
         }
     };
 
@@ -932,6 +954,7 @@ export default function Class() {
                             {/* New media */}
                             <button
                                 className="rounded-md bg-[#002D4A] px-6 md:px-10 py-1 text-sm/6 text-white hover:text-[#80ED99] font-bold shadow-xs cursor-pointer border-[#002D4A] border-2 hover:border-[#80ED99] transition-all duration-300"
+                                onClick={() => setShowAddMediaModal(true)}
                             >
                                 เพิ่มสื่อการสอน
                             </button>
@@ -943,15 +966,25 @@ export default function Class() {
                         <div>
                             {classData.c_medias && Object.keys(classData.c_medias).length > 0 ? (
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {Object.entries(classData.c_medias).map(([key, value]) => (
-                                        <div key={key} className="bg-[#2D4A5B] p-4 rounded-lg">
-                                            <h3 className="font-bold">{value.title}</h3>
-                                            <p className="text-sm text-gray-300 mt-1">{value.description}</p>
+                                    {Object.entries(classData.c_medias).map(([key, media]) => (
+                                        <div key={key} className="bg-[#2D4A5B] p-4 rounded-lg border border-[#203D4F] hover:border-[#80ED99] transition-all duration-300">
+                                            <h3 className="font-bold">{media.m_name}</h3>
+                                            {/* <p className="text-sm text-gray-300 mt-1">{media.m_media[key]}</p> */}
+
                                         </div>
+                                        
                                     ))}
                                 </div>
                             ) : (
-                                <p className="text-sm text-white/60 mt-3">ยังไม่มีสื่อการสอนในห้องเรียนนี้</p>
+                                 <div className="text-center py-8">
+                                    <p className="text-white/60 text-sm mb-4">ยังไม่มีสื่อการสอนในห้องเรียนนี้</p>
+                                    <button
+                                        onClick={() => setShowAddMediaModal(true)}
+                                        className="inline-flex items-center px-4 py-2 bg-[#80ED99] hover:bg-[#80ED99]/80 text-[#203D4F] font-semibold rounded-lg transition-colors duration-300 cursor-pointer"
+                                    >
+                                        + เพิ่มสื่อการสอนแรก
+                                    </button>
+                                </div>
                             )}
                         </div>
                     </div>
@@ -959,6 +992,8 @@ export default function Class() {
             </div>
         );
     };
+
+    console.log(classData);
 
     return (
         <div className="h-screen flex flex-col overflow-hidden">
@@ -1028,6 +1063,13 @@ export default function Class() {
                         onClose={() => setShowAddHomeworkModal(false)}
                         classId={classId}
                         onSuccess={handleHomeworkRefresh}
+                    />
+                    {/* Add Media to Class Modal */}
+                    <AddMediaToClassModal
+                        isOpen={showAddMediaModal}
+                        onClose={() => setShowAddMediaModal(false)}
+                        classId={classId}
+                        onSuccess={handleMediaRefresh}
                     />
 
                     {/* Homework Progress Modal */}
