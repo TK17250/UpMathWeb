@@ -247,6 +247,150 @@ async function updateMedia(prevState: any, formData: FormData) {
     }
 }
 
+// Add media to class 
+async function addMediaToClass(prevState: any, formData: FormData): Promise<any> {
+    try {
+        const supabase = await createSupabaseServerClient();
+        const mediaId = formData.get("mediaId") as string;
+        const classId = formData.get("classId") as string;
+        
+        // Get teacher data
+        const userData = await getUserData();
+        if (!userData) return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลผู้ใช้", type: "error" };
+
+        // Validate input
+        if (!mediaId || !classId) {
+            return { 
+                title: "เกิดข้อผิดพลาด", 
+                message: "ข้อมูลไม่ครบถ้วน", 
+                type: "error" 
+            };
+        }
+
+        const mediaIdNum = parseInt(mediaId);
+        const classIdNum = parseInt(classId);
+
+        if (isNaN(mediaIdNum) || isNaN(classIdNum)) {
+            return { 
+                title: "เกิดข้อผิดพลาด", 
+                message: "ข้อมูลไม่ถูกต้อง", 
+                type: "error" 
+            };
+        }
+
+        // Check if media exists and belongs to teacher
+        const { data: media, error: mediaError } = await supabase
+            .from("medias")
+            .select("*")
+            .eq("m_id", mediaIdNum)
+            .eq("m_temail", userData.t_email)
+            .single();
+
+        if (mediaError || !media) {
+            console.error(mediaError);
+            return { 
+                title: "เกิดข้อผิดพลาด", 
+                message: "ไม่พบสื่อหรือไม่มีสิทธิ์เข้าถึง", 
+                type: "error" 
+            };
+        }
+
+        // Check if class exists and belongs to teacher
+        const { data: classData, error: classError } = await supabase
+            .from("classs")
+            .select("c_id, c_students, c_medias")
+            .eq("c_id", classIdNum)
+            .eq("c_tid", userData.t_id)
+            .single();
+
+        if (classError || !classData) {
+            return { 
+                title: "เกิดข้อผิดพลาด", 
+                message: "ไม่พบห้องเรียนหรือไม่มีสิทธิ์เข้าถึง", 
+                type: "error" 
+            };
+        }
+
+        // Get all students in the class
+        const students = classData.c_students || {};
+        const studentList = Object.values(students) as Array<{ s_id: number; [key: string]: any }>;
+
+        if (studentList.length === 0) {
+            return { 
+                title: "เกิดข้อผิดพลาด", 
+                message: "ไม่มีนักเรียนในห้องเรียนนี้", 
+                type: "error" 
+            };
+        }
+
+        // Check if this media is already assigned to this class
+        const existingClassMedias = classData.c_medias || {};
+
+        // Check if media already exists in c_medias
+        const mediaExists = Object.values(existingClassMedias).some((mediaItem: any) =>
+            mediaItem && (mediaItem.id === mediaIdNum || mediaItem.m_id === mediaIdNum)
+        );
+
+        if (mediaExists) {
+            return { 
+                title: "เกิดข้อผิดพลาด", 
+                message: "สื่อนี้ถูกเพิ่มในห้องเรียนแล้ว", 
+                type: "error" 
+            };
+        }
+
+        // Prepare the media data structure for c_media field
+        const mediaDataForClass = {
+            id: mediaIdNum,
+            m_id: mediaIdNum,
+            m_name: media.m_name,
+            m_content: media.m_content,
+            m_type: media.m_type,
+            time_assignment: new Date().toISOString(),
+            assigned_by: userData.t_email
+        };
+
+        // Generate a unique key for this media in c_medias
+        const mediaKey = `media_${mediaIdNum}_${Date.now()}`;
+
+        // Update the existing c_medias object
+        const updatedClassMedias = {
+            ...existingClassMedias,
+            [mediaKey]: mediaDataForClass
+        };
+
+        // Update the class with the new media
+        const { error: updateError } = await supabase
+            .from("classs")
+            .update({ c_medias: updatedClassMedias })
+            .eq("c_id", classIdNum);
+
+        if (updateError) {
+            console.error("Update class media error:", updateError);
+            console.log(updateError.message);
+            return { 
+                title: "เกิดข้อผิดพลาด", 
+                message: `ไม่สามารถเพิ่มสื่อในห้องเรียนได้: ${updateError.message}`,
+                type: "error" 
+            };
+        }
+
+        return {
+            title: "สำเร็จ",
+            message: `เพิ่มสื่อ "${media.m_name}" ในห้องเรียนเรียบร้อยแล้ว (สำหรับนักเรียน ${studentList.length} คน)`,
+            type: "success"
+        };
+
+    } catch (error: any) {
+        console.log("Server error: ", error.message);
+        return { 
+            title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์", 
+            message: error.message, 
+            type: "error" 
+        };
+    }
+}
+
 // ** NEW FUNCTION **
 // Delete media
 async function deleteMedia(prevState: any, formData: FormData) {
@@ -311,11 +455,38 @@ async function deleteMedia(prevState: any, formData: FormData) {
     }
 }
 
+async function getMediaID(id: string) {
+    try {
+        const supabase = await createSupabaseServerClient();
+        const { data: media, error } = await supabase
+            .from("medias")
+            .select("*")
+            .eq("m_id", id)
+            .single();
+
+        if (error) {
+            console.error("Error fetching media by ID:", error.message);
+            return { title: "เกิดข้อผิดพลาด", message: await translateServerSupabaseErrorToThai(error), type: "error" };
+        }
+
+        if (!media) {
+            return { title: "ไม่พบสื่อ", message: "ไม่พบสื่อการสอนที่มีรหัสนี้", type: "error" };
+        }
+
+        return media;
+    } catch (error: any) {
+        console.error("Error fetching media by ID:", error.message);
+        return { title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์", message: error.message, type: "error" };
+    }
+}
+
 
 export {
     createMedia,
     getMedia,
+    addMediaToClass,
     getMediaWithSignedUrls,
     updateMedia,
     deleteMedia, // Export the new function
+    getMediaID,
 }
