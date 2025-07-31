@@ -223,7 +223,13 @@ export default function StudentDetailModal({ isOpen, onClose, activityId, studen
                                                                         : 'border-red-400'
                                                             }`}>
                                                                 <div className="flex items-center justify-between mb-3">
-                                                                    <h5 className="text-[#80ED99] font-medium text-lg">ข้อที่ {index + 1}</h5>
+                                                                    <h5 className={`${
+                                                                        answerStatus.error
+                                                                            ? 'text-yellow-500'
+                                                                            : answerStatus.isCorrect 
+                                                                                ? 'text-green-400' 
+                                                                                : 'text-red-400'
+                                                                    } font-medium text-lg`}>ข้อที่ {index + 1}</h5>
                                                                     <div className={`px-3 py-1 rounded-full text-sm font-medium ${
                                                                         answerStatus.error
                                                                             ? 'bg-yellow-500/20 text-yellow-400'
