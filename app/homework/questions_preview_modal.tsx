@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { XMarkIcon, DocumentTextIcon, AcademicCapIcon, DocumentArrowDownIcon } from '@heroicons/react/24/outline';
-import KaTeXRenderer, { MathText, MathDisplay } from '@/utils/katexRenderer';
+import { MathText } from '@/utils/katexRenderer';
 import { downloadPDF as generatePDF } from '@/utils/pdfGenerator';
 import { deleteHomework } from '@/app/action/homework';
 import DeleteHomeworkModal from './delete_homework_modal';
@@ -22,8 +22,7 @@ interface Question {
     question: string;
     question_type: string;
     options?: string[];
-    correct_answer: string;
-    correct_option_index?: number;
+    correct_option_index: number;
     explanation: string;
     score: number;
     difficulty: string;
@@ -81,16 +80,7 @@ export default function QuestionsPreviewModal({
         if (questionsData) {
             const processedData = JSON.parse(JSON.stringify(questionsData));
             
-            // Fix any inconsistencies between correct_answer and correct_option_index
-            processedData.questions = processedData.questions.map((question: Question) => {
-                if (question.options && question.correct_answer) {
-                    const correctIndex = question.options.findIndex(option => option === question.correct_answer);
-                    if (correctIndex !== -1 && correctIndex !== question.correct_option_index) {
-                        question.correct_option_index = correctIndex;
-                    }
-                }
-                return question;
-            });
+            // No need to fix data since we only use correct_option_index now
             
             setEditableData(processedData);
             // เปิดข้อแรกโดยอัตโนมัติ
@@ -180,13 +170,7 @@ export default function QuestionsPreviewModal({
                 if (q.id === questionId) {
                     const updatedQuestion = { ...q, [field]: value };
                     
-                    // If options are updated, ensure correct_option_index matches correct_answer
-                    if (field === 'options' && updatedQuestion.options && updatedQuestion.correct_answer) {
-                        const correctIndex = updatedQuestion.options.findIndex(option => option === updatedQuestion.correct_answer);
-                        if (correctIndex !== -1) {
-                            updatedQuestion.correct_option_index = correctIndex;
-                        }
-                    }
+                    // No need to sync with correct_answer since we don't use it anymore
                     
                     return updatedQuestion;
                 }
@@ -209,7 +193,6 @@ export default function QuestionsPreviewModal({
                     question_type: q.question_type,
                     options: q.options,
                     ...(includeAnswers && {
-                        correct_answer: q.correct_answer,
                         correct_option_index: q.correct_option_index,
                         explanation: q.explanation
                     }),
@@ -514,7 +497,12 @@ export default function QuestionsPreviewModal({
                                                     <div className="border-t border-[#002D4A] pt-3">
                                                         <h4 className="text-sm font-medium text-[#80ED99] mb-2">คำตอบ:</h4>
                                                         <div className="text-green-300 text-sm mb-3 bg-[#2D4A5B] p-2 rounded">
-                                                            <MathText>{question.correct_answer}</MathText>
+                                                            <MathText>
+                                                                {question.options && question.correct_option_index !== undefined 
+                                                                    ? question.options[question.correct_option_index] 
+                                                                    : 'ไม่มีคำตอบที่ถูก'
+                                                                }
+                                                            </MathText>
                                                         </div>
                                                         <h4 className="text-sm font-medium text-[#80ED99] mb-2">วิธีทำ:</h4>
                                                         <div className="text-gray-300 text-sm bg-[#2D4A5B] p-3 rounded leading-relaxed">
@@ -604,11 +592,6 @@ export default function QuestionsPreviewModal({
                                                                                 const newOptions = [...question.options!];
                                                                                 newOptions[optIndex] = e.target.value;
                                                                                 updateQuestionContent(question.id, 'options', newOptions);
-                                                                                
-                                                                                // Update correct_answer if this is the selected option
-                                                                                if (optIndex === question.correct_option_index) {
-                                                                                    updateQuestionContent(question.id, 'correct_answer', e.target.value);
-                                                                                }
                                                                             }}
                                                                             className={`flex-1 px-3 py-2 text-white rounded border focus:border-[#80ED99] ${
                                                                                 optIndex === question.correct_option_index 
@@ -634,31 +617,25 @@ export default function QuestionsPreviewModal({
                                                         {question.options && question.options.length > 0 ? (
                                                             <div className="space-y-2">
                                                                 <select
-                                                                    value={question.correct_answer || question.options[0]}
+                                                                    value={question.correct_option_index !== undefined ? question.correct_option_index : 0}
                                                                     onChange={(e) => {
-                                                                        const selectedValue = e.target.value;
-                                                                        const selectedIndex = question.options!.findIndex(option => option === selectedValue);
+                                                                        const selectedIndex = parseInt(e.target.value);
                                                                         updateQuestionContent(question.id, 'correct_option_index', selectedIndex);
-                                                                        updateQuestionContent(question.id, 'correct_answer', selectedValue);
                                                                     }}
                                                                     className="w-full px-3 py-2 bg-[#2D4A5B] text-white rounded border border-[#002D4A] focus:border-[#80ED99]"
                                                                 >
                                                                     {question.options.map((option, index) => (
-                                                                        <option key={index} value={option}>
-                                                                            {option}
+                                                                        <option key={index} value={index}>
+                                                                            {index + 1}. {option}
                                                                         </option>
                                                                     ))}
                                                                 </select>
                                                             </div>
                                                         ) : (
-                                                            // Open-ended question - show text input
-                                                            <textarea
-                                                                value={question.correct_answer}
-                                                                onChange={(e) => updateQuestionContent(question.id, 'correct_answer', e.target.value)}
-                                                                className="w-full px-3 py-2 bg-[#2D4A5B] text-white rounded border border-[#002D4A] focus:border-[#80ED99] resize-none"
-                                                                rows={3}
-                                                                placeholder="คำตอบสำหรับโจทย์อัตนัย"
-                                                            />
+                                                            // Open-ended question - not supported without correct_answer
+                                                            <div className="w-full px-3 py-2 bg-gray-600/20 text-gray-400 rounded border border-gray-600">
+                                                                ไม่รองรับโจทย์อัตนัย (ต้องใช้ correct_answer)
+                                                            </div>
                                                         )}
                                                     </div>
 

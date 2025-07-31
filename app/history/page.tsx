@@ -6,6 +6,7 @@ import { getActivities } from "../action/history";
 import Navbar from "../component/navbar";
 import Sidebar from "../component/sidebar";
 import Footer from "../component/footer";
+import StudentDetailModal from "./student_detail_modal";
 
 // Function to format date and time
 function formatDateTime(dateString: string) {
@@ -37,6 +38,8 @@ export default function History() {
   const [activities, setActivities] = useState<any[]>([]);
   const [student_data, setStudentData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedActivity, setSelectedActivity] = useState<{id: number, name: string} | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
 
   // Check login
   const router = useRouter();
@@ -147,10 +150,22 @@ export default function History() {
                                   เสร็จสิ้น
                                 </div>
                                 <button
-                                  onClick={() => router.push(`/history/${activity.a_id}`)}
-                                  className="px-3 py-1 rounded-full text-sm font-medium bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors duration-200 cursor-pointer"
+                                  onClick={() => {
+                                    setSelectedActivity({
+                                      id: activity.a_id,
+                                      name: activity.student_name || 'ไม่ระบุชื่อ'
+                                    });
+                                    setShowDetailModal(true);
+                                  }}
+                                  className="px-3 py-1 rounded-full text-sm font-medium bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors duration-200 cursor-pointer mr-2"
                                 >
                                   ดูรายละเอียด
+                                </button>
+                                <button
+                                  onClick={() => router.push(`/history/${activity.a_id}`)}
+                                  className="px-3 py-1 rounded-full text-sm font-medium bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors duration-200 cursor-pointer"
+                                >
+                                  สถิติ
                                 </button>
                               </div>
                               <div className="text-xs text-white/60 mt-1">
@@ -190,6 +205,19 @@ export default function History() {
 
           {/* Footer */}
           <Footer />
+
+          {/* Student Detail Modal */}
+          {selectedActivity && (
+            <StudentDetailModal
+              isOpen={showDetailModal}
+              onClose={() => {
+                setShowDetailModal(false);
+                setSelectedActivity(null);
+              }}
+              activityId={selectedActivity.id}
+              studentName={selectedActivity.name}
+            />
+          )}
         </div>
       )}
     </div>
