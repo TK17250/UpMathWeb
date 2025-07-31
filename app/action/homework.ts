@@ -3,14 +3,70 @@ import { createSupabaseServerClient } from "@/server/server";
 import { getUserData } from "./getuser";
 import axios from "axios";
 
+// Function to shuffle array using Fisher-Yates algorithm
+function shuffleArray<T>(array: T[]): T[] {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+}
+
+// Function to randomize choices in questions
+function randomizeChoices(questions: any[]): any[] {
+    return questions.map(question => {
+        // Only randomize if it's a multiple choice question with options
+        if (question.question_type === 'multiple_choice' && 
+            question.options && 
+            Array.isArray(question.options) && 
+            question.options.length > 0 &&
+            typeof question.correct_option_index === 'number' &&
+            question.correct_option_index >= 0) {
+            
+            // Store the correct answer
+            const correctAnswer = question.options[question.correct_option_index];
+            
+            // Shuffle the options array
+            const shuffledOptions = shuffleArray(question.options);
+            
+            // Find the new index of the correct answer
+            const newCorrectIndex = shuffledOptions.indexOf(correctAnswer);
+            
+            return {
+                ...question,
+                options: shuffledOptions,
+                correct_option_index: newCorrectIndex,
+                correct_answer: correctAnswer // Keep the correct answer unchanged
+            };
+        }
+        
+        // Return unchanged if not a multiple choice question
+        return question;
+    });
+}
+
 // Generate questions using AI
-async function generateQuestions(subject: string, level: string, bloomTaxonomy: string, type: string, totalQuestions: number, content?: string): Promise<any> {
+async function generateQuestions(subject: string, level: string, bloomTaxonomy: string, type: string, totalQuestions: number, content?: string, previousQuestions?: any[]): Promise<any> {
     try {
+        // Create context from previous questions to help AI avoid repetitive choices
+        let previousChoicesContext = '';
+        if (previousQuestions && previousQuestions.length > 0) {
+            previousChoicesContext = `\n\n**ข้อมูลจากข้อก่อนหน้าเพื่อกระจายตัวเลือก:**\n`;
+            previousQuestions.forEach((q, index) => {
+                if (q.options && q.options.length > 0) {
+                    previousChoicesContext += `ข้อที่ ${index + 1}: ตัวเลือก = [${q.options.join(', ')}], คำตอบ = ${q.correct_answer}\n`;
+                }
+            });
+            previousChoicesContext += `**กรุณาสร้างตัวเลือกที่แตกต่างจากข้อก่อนหน้า**\n`;
+        }
+
         const prompt = `สร้างโจทย์คณิตศาสตร์ ${totalQuestions} ข้อ สำหรับระดับ ${level} 
         หัวข้อ: ${subject}
         ประเภท: ${type}
         Bloom's Taxonomy: ${bloomTaxonomy}
         ${content ? `คำอธิบายเพิ่มเติม: ${content}` : ''}
+        ${previousChoicesContext}
         
         **ข้อกำหนดสำคัญ:**
         1. ใช้ KaTeX สำหรับการแสดงสูตรคณิตศาสตร์ทั้งหมด
@@ -21,6 +77,7 @@ async function generateQuestions(subject: string, level: string, bloomTaxonomy: 
         6. สร้างโจทย์ให้ครอบคลุมระดับขั้นของ Bloom's Taxonomy ที่กำหนด: ${bloomTaxonomy}
         7. สำหรับโจทย์ปรนัย ให้มี options และ correct_option_index
         8. สำหรับโจทย์อัตนัย ให้ตั้ง options เป็น [] และ correct_option_index เป็น -1
+        9. **สำคัญ: สร้างตัวเลือกที่หลากหลายและไม่ซ้ำกันในแต่ละข้อ หลีกเลี่ยงการใช้ตัวเลือกที่คล้ายกับข้อก่อนหน้า**
         
         **รูปแบบ JSON ที่ต้องการ:**
         {
@@ -158,6 +215,9 @@ async function generateQuestions(subject: string, level: string, bloomTaxonomy: 
                 fallbackData: fallbackData
             };
         }
+
+        // Randomize choices for each question to prevent predictable patterns
+        questionsData.questions = randomizeChoices(questionsData.questions);
 
         // Calculate total score from individual questions
         const totalScore = questionsData.questions.reduce((sum: number, q: any) => {
@@ -300,6 +360,11 @@ async function updateHomework(homeworkId: number, questionsData: any): Promise<a
         const userData = await getUserData();
         if (!userData) return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลผู้ใช้", type: "error" };
 
+        // Randomize choices before updating
+        if (questionsData.questions && Array.isArray(questionsData.questions)) {
+            questionsData.questions = randomizeChoices(questionsData.questions);
+        }
+
         // Update homework in database
         const { error: updateError } = await supabase
             .from("homework")
@@ -374,7 +439,13 @@ async function getHomeworkDetails(homeworkId: number) {
             return { title: "ไม่พบชุดฝึก", message: "ไม่พบข้อมูลชุดฝึกที่ต้องการ", type: "error" };
         }
 
-        return homework.h_content;
+        // Randomize choices each time homework is retrieved
+        const homeworkContent = homework.h_content;
+        if (homeworkContent && homeworkContent.questions && Array.isArray(homeworkContent.questions)) {
+            homeworkContent.questions = randomizeChoices(homeworkContent.questions);
+        }
+
+        return homeworkContent;
     } catch (error: any) {
         console.log("Server error: ", error.message);
         return { title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์", message: error.message, type: "error" };
@@ -514,5 +585,6 @@ export {
     updateHomework,
     getHomeworkDetails,
     deleteHomework,
-    checkHomeworkActive
+    checkHomeworkActive,
+    randomizeChoices
 }
