@@ -473,6 +473,30 @@ async function getMediaID(id: string) {
             return { title: "ไม่พบสื่อ", message: "ไม่พบสื่อการสอนที่มีรหัสนี้", type: "error" };
         }
 
+        // Get signed URL for the media file
+        const filePath = media.m_media?.file_name;
+        if (filePath) {
+            const { data: urlData, error: urlError } = await supabase
+                .storage
+                .from('medias')
+                .createSignedUrl(filePath, 3600);
+
+            if (!urlError && urlData) {
+                media.signedUrl = urlData.signedUrl;
+
+                // Determine file type
+                const extension = filePath.split('.').pop()?.toLowerCase() || '';
+                if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension)) {
+                    media.fileType = 'image';
+                } else if (['mp4', 'mov', 'webm', 'ogv'].includes(extension)) {
+                    media.fileType = 'video';
+                } else {
+                    media.fileType = 'unknown';
+                }
+            }
+        }
+
+        console.log("Fetched media:", media);
         return media;
     } catch (error: any) {
         console.error("Error fetching media by ID:", error.message);
