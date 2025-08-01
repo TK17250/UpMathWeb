@@ -335,6 +335,65 @@ async function deleteClass(prevState: any, formData: FormData) {
     }
 }
 
+//remove media from class
+async function removeMediaFromClass(classId: number, mediaId: string) {
+    try {
+        const supabase = await createSupabaseServerClient();
+
+        // First, get the current class data
+        const { data: classData, error: fetchError } = await supabase
+            .from("classs")
+            .select("c_medias")
+            .eq("c_id", classId)
+            .single();
+
+        if (fetchError) {
+            return { 
+                title: "เกิดข้อผิดพลาด", 
+                message: translateServerSupabaseErrorToThai(fetchError.message), 
+                type: "error" 
+            };
+        }
+
+        // Get current medias object
+        const currentMedias = classData.c_medias || {};
+
+        // Remove the media entry that matches the mediaId
+        const updatedMedias = Object.fromEntries(
+            Object.entries(currentMedias).filter(([key, value]: [string, any]) => 
+                value.m_id !== mediaId
+            )
+        );
+
+        // Update the class with the new medias object
+        const { error: updateError } = await supabase
+            .from("classs")
+            .update({ c_medias: updatedMedias })
+            .eq("c_id", classId);
+
+        if (updateError) {
+            return { 
+                title: "เกิดข้อผิดพลาด", 
+                message: translateServerSupabaseErrorToThai(updateError.message), 
+                type: "error" 
+            };
+        }
+
+        return { 
+            title: "สำเร็จ", 
+            message: "ลบสื่อออกจากห้องเรียนสำเร็จ", 
+            type: "success" 
+        };
+    } catch (error: any) {
+        console.log("Error removing media from class:", error.message);
+        return { 
+            title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์", 
+            message: error.message, 
+            type: "error" 
+        };
+    }
+}
+
 export {
     createClass,
     getClassData,
@@ -343,4 +402,5 @@ export {
     getClassDataById,
     updateClassData,
     deleteClass,
+    removeMediaFromClass
 }

@@ -5,7 +5,7 @@ import { XMarkIcon } from '@heroicons/react/24/outline';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTrash } from '@fortawesome/free-solid-svg-icons';
 import { getMedia, getMediaID } from '@/app/action/media';
-
+import { removeMediaFromClass } from '@/app/action/class';
 interface MediaData {
     m_id: number;
     m_name: string;
@@ -70,24 +70,20 @@ export default function MediaPreviewModal({
         setIsDeleting(true);
         
         try {
-            // Replace with your actual delete media function
-            // const result = await deleteMedia(classId, mediaId);
-            // if (result.type === 'success') {
-                if (window.showAlert) {
-                    window.showAlert('สำเร็จ', `ลบสื่อ "${mediaName}" เรียบร้อยแล้ว`, 'success');
-                }
-                setTimeout(() => {
-                    handleClose();
+                const response = await removeMediaFromClass(classId, mediaId);
+                if (response?.type === "error") {
+                    console.error("Error from removeMediaFromClass:", response.message);
+                } else {
+                    if (window.showAlert) {
+                        window.showAlert('สำเร็จ', `ลบสื่อ "${mediaName}" เรียบร้อยแล้ว`, 'success');
+                    }
+                    setTimeout(() => {
+                        handleClose();
                     if (typeof window !== 'undefined' && window.location) {
                         window.location.reload();
                     }
                 }, 1500);
-            // } else {
-            //     if (window.showAlert) {
-            //         window.showAlert('เกิดข้อผิดพลาด', result.message || 'ไม่สามารถลบสื่อได้', 'error');
-            //     }
-            //     setIsDeleting(false);
-            // }
+            }
         } catch (error) {
             console.error('Error deleting media:', error);
             if (window.showAlert) {
@@ -95,6 +91,8 @@ export default function MediaPreviewModal({
             }
             setIsDeleting(false);
         }
+
+        
     };
 
     const renderMediaContent = () => {
@@ -314,7 +312,7 @@ export default function MediaPreviewModal({
                         {/* Content */}
                         <div className="space-y-4 mb-6">
                             <p className="text-white">
-                                คุณต้องการลบสื่อ <span className="font-semibold text-yellow-400">"{mediaName}"</span> หรือไม่?
+                                คุณต้องการลบสื่อ <span className="font-semibold text-yellow-400">"{mediaData.m_name}"</span> หรือไม่?
                             </p>
                             
                             <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-3">

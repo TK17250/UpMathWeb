@@ -81,6 +81,7 @@ export default function AddMediaToClassModal({
                 }
                 onSuccess?.();
                 handleClose();
+                window.location.reload();
             } else {
                 if (window.showAlert) {
                     window.showAlert(result.title, result.message, result.type);

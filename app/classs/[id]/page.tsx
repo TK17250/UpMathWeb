@@ -1202,8 +1202,6 @@ const handleHomeworkRefresh = () => {
         );
     };
 
-    console.log(classData);
-
     return (
         <div className="h-screen flex flex-col overflow-hidden">
             {user && (
