@@ -130,6 +130,7 @@ export default function Class() {
     const [studentsData, setStudentsData] = useState<Record<string, any>>({});
     const [showAddMediaModal, setShowAddMediaModal] = useState(false);
     const [mediaList, setMediaList] = useState<any[]>([]);
+    
     // Check login
     const router = useRouter();
     useEffect(() => {
@@ -258,6 +259,91 @@ export default function Class() {
         fetchStudentsData();
     }, [classData]);
 
+
+// MediaCard component
+const MediaCard = ({ mediaId, mediaName }: { mediaId: string; mediaName: string }) => {
+    const [mediaData, setMediaData] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
+
+    const [signedUrl, setSignedUrl] = useState<string>("");
+
+
+    useEffect(() => {
+        const fetchMediaData = async () => {
+            try {
+                const data = await getMediaID(mediaId);
+                setMediaData(data);
+                setSignedUrl(data.signedUrl || "");
+            } catch (error) {
+                console.error("Error fetching media:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+            
+            console.log('Signed URL:', signedUrl);
+        fetchMediaData();
+    }, [mediaId]);
+
+    if (loading) {
+        return (
+            <div className="bg-[#2D4A5B] p-4 rounded-lg border border-[#203D4F] hover:border-[#80ED99] transition-all duration-300">
+                <div className="animate-pulse">
+                    <div className="h-4 bg-gray-700 rounded w-3/4 mb-2"></div>
+                    <div className="aspect-video bg-gray-700 rounded mb-3"></div>
+                    <div className="h-3 bg-gray-700 rounded w-full mb-2"></div>
+                    <div className="h-3 bg-gray-700 rounded w-2/3"></div>
+                </div>
+            </div>
+        );
+    }
+
+    if (!mediaData || mediaData.error) {
+        return (
+            <div className="bg-[#2D4A5B] p-4 rounded-lg border border-[#203D4F] hover:border-[#80ED99] transition-all duration-300">
+                <h3 className="font-bold mb-2">{mediaName || 'Unknown Media'}</h3>
+                <p className="text-sm text-red-400">Error loading media</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="bg-[#2D4A5B] p-4 rounded-lg border border-[#203D4F] hover:border-[#80ED99] transition-all duration-300">
+            <h3 className="font-bold mb-2 line-clamp-2">{mediaData.m_name || mediaName || 'Unknown Name'}</h3>
+            {mediaData.m_media && (
+                <>
+                    <div className="aspect-video mb-3 relative overflow-hidden rounded-lg bg-black/20">
+                        {signedUrl ? (
+                            <>
+                                <img
+                                    src={signedUrl}
+                                    className="absolute inset-0 w-full h-full object-contain"
+                                />
+                                <div className="absolute bottom-2 right-2 text-xs text-white/50">
+                                    {mediaData.m_media?.file_name?.split('/').pop() || 'Unknown file'}
+                                </div>
+                            </>
+                        ) : (
+                            <div className="absolute inset-0 flex items-center justify-center text-white/50">Loading media...</div>
+                        )}
+                    </div>
+                    <div className="group relative">
+                        <p className="text-sm text-white/70 line-clamp-2">
+                            {mediaData.m_media.description || 'No description available'}
+                        </p>
+                        {mediaData.m_media.description && mediaData.m_media.description.length > 100 && (
+                            <div className="hidden group-hover:block absolute z-10 bg-[#1a2b38] p-3 rounded-lg shadow-lg mt-2 w-full">
+                                <p className="text-sm text-white/70">
+                                    {mediaData.m_media.description}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                </>
+            )}
+        </div>
+    );
+};
     // Refresh homework when modal closes
     const handleHomeworkRefresh = () => {
         if (classId > 0) {
@@ -967,15 +1053,11 @@ export default function Class() {
                             {classData.c_medias && Object.keys(classData.c_medias).length > 0 ? (
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                     {Object.entries(classData.c_medias).map(([key, media]) => (
-                                        <div key={key} className="bg-[#2D4A5B] p-4 rounded-lg border border-[#203D4F] hover:border-[#80ED99] transition-all duration-300">
-                                            <h3 className="font-bold">{media.m_name}</h3>
-                                            {/* <p className="text-sm text-gray-300 mt-1">{media.m_media[key]}</p> */}
+                                        <MediaCard key={`${media.m_id}-${key}`} mediaId={media.m_id} mediaName={media.m_name} />
 
-                                        </div>
-                                        
                                     ))}
                                 </div>
-                            ) : (
+) : (
                                  <div className="text-center py-8">
                                     <p className="text-white/60 text-sm mb-4">ยังไม่มีสื่อการสอนในห้องเรียนนี้</p>
                                     <button
