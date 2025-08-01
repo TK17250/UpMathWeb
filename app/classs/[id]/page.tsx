@@ -23,6 +23,7 @@ import ConfirmationModal from "@/app/component/modal1";
 import AddMediaToClassModal from '../add_media_to_class_modal';
 import { getMedia, getMediaID } from "@/app/action/media";
 import MediaPreviewModal from "../media_preview_modal";
+import AssessmentTrackingModal from "../assessment_tracking_modal";
 // import { MediaPreviewModal } from "../media_preview_modal";
 
 // Define TypeScript interfaces
@@ -161,6 +162,7 @@ export default function Class() {
     const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
     const [showMediaPreview, setShowMediaPreview] = useState<boolean>(false);
     const [MediaIdForPreview, setMediaIdForPreview] = useState<string | null>(null);
+    const [showAssessmentModal, setShowAssessmentModal] = useState<boolean>(false);
 
     // Check login
     const router = useRouter();
@@ -749,7 +751,15 @@ const handleHomeworkRefresh = () => {
 
                     {/* Student Information */}
                     <div className="border-none border-[#002D4A] hover:border-[#80ED99] bg-[#203D4F] rounded-lg p-4">
-                        <h2 className="text-xl font-bold">ข้อมูลนักเรียน</h2>
+                        <div className="flex justify-between items-center">
+                            <h2 className="text-xl font-bold">ข้อมูลนักเรียน</h2>
+                            <button
+                                onClick={() => setShowAssessmentModal(true)}
+                                className="text-xs bg-[#80ED99] hover:bg-[#80ED99]/80 text-black px-3 py-1 rounded-md font-medium transition-colors"
+                            >
+                                ติดตามผลประเมิน
+                            </button>
+                        </div>
                         <hr className="my-2 border-white/30" />
                         <div>
                             {classData.c_students && Object.keys(classData.c_students).length > 0 ? (
@@ -1304,6 +1314,14 @@ const handleHomeworkRefresh = () => {
 
                         />
                    )}
+
+                    {/* Assessment Tracking Modal */}
+                    <AssessmentTrackingModal
+                        isOpen={showAssessmentModal}
+                        onClose={() => setShowAssessmentModal(false)}
+                        classId={classId}
+                        className={classData?.c_name || 'ไม่มีชื่อ'}
+                    />
                 </div>
             )}
         </div>
