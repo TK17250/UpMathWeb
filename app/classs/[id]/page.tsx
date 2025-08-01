@@ -22,6 +22,8 @@ import HomeworkProgressModal from "../homework_progress_modal";
 import ConfirmationModal from "@/app/component/modal1";
 import AddMediaToClassModal from '../add_media_to_class_modal';
 import { getMedia, getMediaID } from "@/app/action/media";
+import MediaPreviewModal from "../media_preview_modal";
+// import { MediaPreviewModal } from "../media_preview_modal";
 
 // Define TypeScript interfaces
 interface AlertState {
@@ -102,6 +104,31 @@ interface NewsActionState {
     message: string;
     type: string;
 }
+interface MediaPreview {
+    m_id: number;
+    m_name: string;
+    m_media: {
+        file_name: string;
+        file_size: number;
+        path?: string;
+    };
+    signedUrl?: string;
+    fileType?: 'image' | 'video' | 'unknown';
+}
+
+interface MediaPreviewModal {
+    isOpen: boolean;
+    onClose: () => void;
+    media: {
+        m_id: number;
+        m_name: string;
+        m_media: {
+            file_name: string;
+            type?: string;
+            description?: string;
+        };
+    } | null;
+}
 
 export default function Class() {
     const [user, setUser] = useState<UserData | null>(null);
@@ -130,7 +157,11 @@ export default function Class() {
     const [studentsData, setStudentsData] = useState<Record<string, any>>({});
     const [showAddMediaModal, setShowAddMediaModal] = useState(false);
     const [mediaList, setMediaList] = useState<any[]>([]);
-    
+    const [previewMedia, setPreviewMedia] = useState<any>();
+    const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
+    const [showMediaPreview, setShowMediaPreview] = useState<boolean>(false);
+    const [MediaIdForPreview, setMediaIdForPreview] = useState<string | null>(null);
+
     // Check login
     const router = useRouter();
     useEffect(() => {
@@ -260,30 +291,119 @@ export default function Class() {
     }, [classData]);
 
 
-// MediaCard component
+// Simplified MediaCard that uses your existing getMediaID function
 const MediaCard = ({ mediaId, mediaName }: { mediaId: string; mediaName: string }) => {
     const [mediaData, setMediaData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
-
-    const [signedUrl, setSignedUrl] = useState<string>("");
-
 
     useEffect(() => {
         const fetchMediaData = async () => {
             try {
                 const data = await getMediaID(mediaId);
-                setMediaData(data);
-                setSignedUrl(data.signedUrl || "");
+                
+                // Check if it's an error response from your function
+                if (data?.type === "error") {
+                    console.error("Error from getMediaID:", data.message);
+                    setMediaData({ error: data.message });
+                } else {
+                    setMediaData(data);
+                }
             } catch (error) {
                 console.error("Error fetching media:", error);
+                setMediaData({ error: "Failed to load media" });
             } finally {
                 setLoading(false);
             }
         };
-            
-            console.log('Signed URL:', signedUrl);
+
         fetchMediaData();
     }, [mediaId]);
+
+    // Render different media types based on your server function's fileType
+    const renderMediaContent = () => {
+        if (!mediaData?.signedUrl) {
+            return (
+                <div className="absolute inset-0 flex items-center justify-center text-white/50">
+                    Loading media...
+                </div>
+            );
+        }
+
+        const fileType = mediaData.fileType || 'unknown';
+        const signedUrl = mediaData.signedUrl;
+
+        switch (fileType) {
+            case 'image':
+                return (
+                    <img
+                        src={signedUrl}
+                        alt={mediaData.m_name || mediaName}
+                        className="absolute inset-0 w-full h-full object-contain"
+                        onError={(e) => {
+                            console.error('Failed to load image:', mediaData.m_media?.file_name);
+                            e.currentTarget.src = '/file.svg';
+                            e.currentTarget.className = 'absolute inset-0 w-full h-full object-contain opacity-50 p-8';
+                        }}
+                    />
+                );
+
+            case 'video':
+                return (
+                    <video
+                        src={signedUrl}
+                        controls
+                        className="absolute inset-0 w-full h-full object-contain"
+                        preload="metadata"
+                        onError={(e) => {
+                            console.error('Failed to load video:', mediaData.m_media?.file_name);
+                        }}
+                    >
+                        Your browser does not support the video tag.
+                    </video>
+                );
+
+            case 'unknown':
+            default:
+                // For audio files and other unknown types
+                const fileName = mediaData.m_media?.file_name || '';
+                const extension = fileName.split('.').pop()?.toLowerCase() || '';
+                
+                // Check if it's an audio file
+                if (['mp3', 'wav', 'ogg', 'aac', 'flac', 'm4a'].includes(extension)) {
+                    return (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center p-4">
+                            <div className="mb-4 text-4xl">🎵</div>
+                            <audio
+                                src={signedUrl}
+                                controls
+                                className="w-full max-w-sm"
+                                preload="metadata"
+                            >
+                                Your browser does not support the audio tag.
+                            </audio>
+                        </div>
+                    );
+                }
+                
+                // For other file types (documents, etc.)
+                return (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center p-4">
+                        <div className="mb-4 text-4xl">📄</div>
+                        <p className="text-sm text-white/70 mb-2 text-center">
+                            {extension.toUpperCase()} File
+                        </p>
+                        <a
+                            href={signedUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bg-[#80ED99] text-black px-4 py-2 rounded hover:bg-[#6bc47f] transition-colors"
+                        >
+                            Open File
+                        </a>
+                    </div>
+                );
+        }
+    };
 
     if (loading) {
         return (
@@ -302,53 +422,60 @@ const MediaCard = ({ mediaId, mediaName }: { mediaId: string; mediaName: string 
         return (
             <div className="bg-[#2D4A5B] p-4 rounded-lg border border-[#203D4F] hover:border-[#80ED99] transition-all duration-300">
                 <h3 className="font-bold mb-2">{mediaName || 'Unknown Media'}</h3>
-                <p className="text-sm text-red-400">Error loading media</p>
+                <p className="text-sm text-red-400">
+                    {mediaData?.error || 'Error loading media'}
+                </p>
             </div>
         );
     }
 
     return (
-        <div className="bg-[#2D4A5B] p-4 rounded-lg border border-[#203D4F] hover:border-[#80ED99] transition-all duration-300">
-            <h3 className="font-bold mb-2 line-clamp-2">{mediaData.m_name || mediaName || 'Unknown Name'}</h3>
+        <div onClick={() => {
+            setShowMediaPreview(true);
+            setMediaIdForPreview(mediaData.m_id);
+        }} className="bg-[#2D4A5B] p-4 rounded-lg border border-[#203D4F] hover:border-[#80ED99] transition-all duration-300 cursor-pointer">
+            <div className="flex items-center gap-2 mb-2">
+                <h3 className="font-bold line-clamp-2 flex-1">
+                    {mediaData.m_name || mediaName || 'Unknown Name'}
+                </h3>
+                {/* File type indicator using your server function's detection */}
+                {mediaData.fileType && (
+                    <span className="text-xs bg-[#80ED99] text-black px-2 py-1 rounded uppercase">
+                        {mediaData.fileType}
+                    </span>
+                )}
+            </div>
+            
             {mediaData.m_media && (
                 <>
                     <div className="aspect-video mb-3 relative overflow-hidden rounded-lg bg-black/20">
-                        {signedUrl ? (
-                            <>
-                                <img
-                                    src={signedUrl}
-                                    className="absolute inset-0 w-full h-full object-contain"
-                                />
-                                <div className="absolute bottom-2 right-2 text-xs text-white/50">
-                                    {mediaData.m_media?.file_name?.split('/').pop() || 'Unknown file'}
-                                </div>
-                            </>
-                        ) : (
-                            <div className="absolute inset-0 flex items-center justify-center text-white/50">Loading media...</div>
-                        )}
-                    </div>
-                    <div className="group relative">
-                        <p className="text-sm text-white/70 line-clamp-2">
-                            {mediaData.m_media.description || 'No description available'}
-                        </p>
-                        {mediaData.m_media.description && mediaData.m_media.description.length > 100 && (
-                            <div className="hidden group-hover:block absolute z-10 bg-[#1a2b38] p-3 rounded-lg shadow-lg mt-2 w-full">
-                                <p className="text-sm text-white/70">
-                                    {mediaData.m_media.description}
-                                </p>
-                            </div>
-                        )}
+                        {renderMediaContent()}
                     </div>
                 </>
             )}
         </div>
     );
 };
-    // Refresh homework when modal closes
-    const handleHomeworkRefresh = () => {
-        if (classId > 0) {
-            const fetchClassHomework = async () => {
-                try {
+
+
+
+// When clicking a media item in MediaCard:
+const handleMediaClick = (mediaData: any) => {
+    setPreviewMedia(mediaData);    // Store the media data
+    setIsPreviewOpen(true);        // Open the preview modal
+    // You can remove showMediaPreview since it's redundant
+};
+
+// When closing the preview:
+const handleClosePreview = () => {
+    setIsPreviewOpen(false);       // Close the modal
+    setPreviewMedia(undefined);    // Clear the preview data
+};
+// Refresh homework when modal closes
+const handleHomeworkRefresh = () => {
+    if (classId > 0) {
+        const fetchClassHomework = async () => {
+            try {
                     const result = await getActivesByClassId(classId);
                     if (Array.isArray(result)) {
                         setClassHomework(result);
@@ -974,7 +1101,7 @@ const MediaCard = ({ mediaId, mediaName }: { mediaId: string; mediaName: string 
                             {classHomework && classHomework.length > 0 ? (
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                     {classHomework.map((homework: HomeworkItem) => (
-                                        <div key={homework.h_id} className="bg-[#2D4A5B] p-4 rounded-lg border border-[#203D4F] hover:border-[#80ED99] transition-all duration-300">
+                                        <div  key={homework.h_id} className="bg-[#2D4A5B] p-4 rounded-lg border border-[#203D4F] hover:border-[#80ED99] transition-all duration-300">
                                             <div className="flex justify-between items-start mb-3">
                                                 <h3 className="font-bold text-white line-clamp-2">{homework.h_name}</h3>
                                                 <div className={`text-xs px-2 py-1 rounded-full ${homework.check_type === 'AI' ? 'bg-blue-500/20 text-blue-400' : 'bg-orange-500/20 text-orange-400'}`}>
@@ -1167,6 +1294,18 @@ const MediaCard = ({ mediaId, mediaName }: { mediaId: string; mediaName: string 
                             homeworkName={selectedHomeworkProgress.name}
                         />
                     )}
+
+                    {/* Media Preview Modal */}
+                    {showMediaPreview && (
+                        <MediaPreviewModal
+                            isOpen={showMediaPreview}
+                            onClose={() => setShowMediaPreview(false)}
+                            classId={classId}
+                            mediaId={MediaIdForPreview ?? ""}
+                            mediaName={previewMedia?.m_name}
+
+                        />
+                   )}
                 </div>
             )}
         </div>
