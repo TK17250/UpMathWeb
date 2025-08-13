@@ -2,6 +2,29 @@
 import { createSupabaseServerClient } from "@/server/server";
 import { getUserData } from "./getuser";
 import axios from "axios";
+import fs from 'fs';
+import path from 'path';
+
+// RunPod Configuration
+const RUNPOD_URL = "https://api.runpod.ai/v2/57uty6p5a5zfdt";
+const HEADERS = {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${process.env.RUNPOD_API_KEY}`
+};
+
+const SYSTEM_PROMPT = fs.readFileSync(path.join(process.cwd(), 'system_prompt.txt'), 'utf8');
+
+const ADDITIONAL_REQUIREMENTS = "โจทย์จำเป็นต้องมีคำตอบ และถ้าโจทย์เป็นแบบ multiple choice (ปรนัย) ต้องมีคำตอบหลอกจำนวน 3 ข้อ (ทั้งหมด หลอก + จริง มี 4 ข้อ) โดยมาจากการคำนวนที่ผิดพลาด";
+
+// Define types for the API response
+interface RunpodChoice {
+    tokens: string[];
+}
+
+interface RunpodOutput {
+    choices: RunpodChoice[];
+}
+
 
 // Function to shuffle array using Fisher-Yates algorithm
 function shuffleArray<T>(array: T[]): T[] {
@@ -16,7 +39,6 @@ function shuffleArray<T>(array: T[]): T[] {
 // Function to randomize choices in questions
 function randomizeChoices(questions: any[]): any[] {
     return questions.map(question => {
-        // Only randomize if it's a multiple choice question with options
         if (question.question_type === 'multiple_choice' && 
             question.options && 
             Array.isArray(question.options) && 
@@ -24,211 +46,314 @@ function randomizeChoices(questions: any[]): any[] {
             typeof question.correct_option_index === 'number' &&
             question.correct_option_index >= 0) {
             
-            // Store the correct answer
             const correctAnswer = question.options[question.correct_option_index];
-            
-            // Shuffle the options array
             const shuffledOptions = shuffleArray(question.options);
-            
-            // Find the new index of the correct answer
             const newCorrectIndex = shuffledOptions.indexOf(correctAnswer);
             
             return {
                 ...question,
                 options: shuffledOptions,
                 correct_option_index: newCorrectIndex,
-                correct_answer: correctAnswer // Keep the correct answer unchanged
+                correct_answer: correctAnswer
             };
         }
         
-        // Return unchanged if not a multiple choice question
         return question;
     });
 }
 
-// Generate questions using AI
-async function generateQuestions(subject: string, level: string, bloomTaxonomy: string, type: string, totalQuestions: number, content?: string, previousQuestions?: any[]): Promise<any> {
+// Create user prompt for RunPod
+function createUserPrompt(topic: string, gradeLevel: string, questionType: string, difficulty: string, bloomLevels: string[], additionalRequirements: string = ADDITIONAL_REQUIREMENTS): string {
+    const bloomStr = bloomLevels.join(", ");
+    const prompt = `จงสร้างโจทย์คณิตศาสตร์คุณภาพสูงโดยกำหนดให้
+1. หัวข้อ: ${topic}
+2. สำหรับนักเรียน: ${gradeLevel}
+3. รูปแบบ: ${questionType}
+4. ความยาก: ${difficulty}
+5. bloom level: ${bloomStr}
+6. จำนวน: 1 ข้อ
+7. เพิ่มเติม: ${additionalRequirements}`;
+
+    return prompt;
+}
+
+// Call RunPod API
+async function callRunpodApi(userPrompt: string, systemPrompt: string = SYSTEM_PROMPT): Promise<string | null> {
     try {
-        // Create context from previous questions to help AI avoid repetitive choices
-        let previousChoicesContext = '';
-        if (previousQuestions && previousQuestions.length > 0) {
-            previousChoicesContext = `\n\n**ข้อมูลจากข้อก่อนหน้าเพื่อกระจายตัวเลือก:**\n`;
-            previousQuestions.forEach((q, index) => {
-                if (q.options && q.options.length > 0) {
-                    previousChoicesContext += `ข้อที่ ${index + 1}: ตัวเลือก = [${q.options.join(', ')}], คำตอบ = ${q.correct_answer}\n`;
-                }
-            });
-            previousChoicesContext += `**กรุณาสร้างตัวเลือกที่แตกต่างจากข้อก่อนหน้า**\n`;
-        }
-
-        const prompt = `สร้างโจทย์คณิตศาสตร์ ${totalQuestions} ข้อ สำหรับระดับ ${level} 
-        หัวข้อ: ${subject}
-        ประเภท: ${type}
-        Bloom's Taxonomy: ${bloomTaxonomy}
-        ${content ? `คำอธิบายเพิ่มเติม: ${content}` : ''}
-        ${previousChoicesContext}
-        
-        **ข้อกำหนดสำคัญ:**
-        1. ใช้ KaTeX สำหรับการแสดงสูตรคณิตศาสตร์ทั้งหมด
-        2. AI จะกำหนดคะแนนของแต่ละข้อตามความยาก (1-5 คะแนน)
-        3. ใส่คำอธิบายวิธีทำแบบละเอียดเป็นขั้นตอน **ใช้ \\n\\n สำหรับขึ้นบรรทัดใหม่**
-        4. ตอบเป็นภาษาไทยเท่านั้น
-        5. **ตอบเป็น JSON เท่านั้น ไม่ต้องใส่ข้อความอื่น**
-        6. สร้างโจทย์ให้ครอบคลุมระดับขั้นของ Bloom's Taxonomy ที่กำหนด: ${bloomTaxonomy}
-        7. สำหรับโจทย์ปรนัย ให้มี options และ correct_option_index
-        8. สำหรับโจทย์อัตนัย ให้ตั้ง options เป็น [] และ correct_option_index เป็น -1
-        9. **สำคัญ: สร้างตัวเลือกที่หลากหลายและไม่ซ้ำกันในแต่ละข้อ หลีกเลี่ยงการใช้ตัวเลือกที่คล้ายกับข้อก่อนหน้า**
-        
-        **รูปแบบ JSON ที่ต้องการ:**
-        {
-            "metadata": {
-                "total_questions": ${totalQuestions},
-                "level": "${level}",
-                "subject": "${subject}",
-                "type": "${type}",
-                "bloom_taxonomy": "${bloomTaxonomy}",
-                "created_at": "${new Date().toISOString()}"
-            },
-            "questions": [
-                {
-                    "id": 1,
-                    "question": "ข้อความโจทย์ในรูปแบบ KaTeX เช่น $\\\\frac{1}{2} + \\\\frac{1}{3} = ?$",
-                    "question_type": "multiple_choice",
-                    "options": ["$\\\\frac{5}{6}$", "$\\\\frac{2}{5}$", "$\\\\frac{3}{5}$", "$\\\\frac{1}{6}$"],
-                    "correct_answer": "$\\\\frac{5}{6}$",
-                    "correct_option_index": 0,
-                    "explanation": "ขั้นตอนที่ 1: หาตัวคูณร่วมน้อยของ 2 และ 3 ซึ่งคือ 6\\n\\nขั้นตอนที่ 2: แปลงเศษส่วนให้มีตัวส่วนเท่ากัน\\n$\\\\frac{1}{2} = \\\\frac{3}{6}$\\n$\\\\frac{1}{3} = \\\\frac{2}{6}$\\n\\nขั้นตอนที่ 3: บวกเศษส่วน\\n$\\\\frac{3}{6} + \\\\frac{2}{6} = \\\\frac{5}{6}$",
-                    "score": 2,
-                    "difficulty": "medium",
-                    "bloom_level": "เข้าใจ"
-                }
-            ]
-        }
-        
-        **หมายเหตุ: ตอบเป็น JSON เท่านั้น ไม่ต้องมีข้อความอื่น ใช้ \\n\\n สำหรับขึ้นบรรทัดใหม่ในคำอธิบาย**`;
-
-        const response = await axios.post(
-            'https://openrouter.ai/api/v1/chat/completions',
-            {
-                model: "qwen/qwen3-30b-a3b:free",
-                messages: [
-                    {
-                        role: "system",
-                        content: "You are a math teacher assistant. Respond ONLY with valid JSON. Do not include any explanatory text before or after the JSON."
-                    },
-                    {
-                        role: "user",
-                        content: prompt
-                    }
-                ],
-                temperature: 0.7,
-                max_tokens: 6000
-            },
-            {
-                headers: {
-                    'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-                    'Content-Type': 'application/json',
-                    'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-                    'X-Title': 'UP Math Generator'
-                }
+        const data = {
+            input: {
+                prompt: `${systemPrompt}\n\nUser: ${userPrompt}\nAssistant:`,
+                sampling_params: { max_tokens: 9216 }
             }
-        );
+        };
 
-        const generatedContent = response.data.choices[0].message.content;
+        const response = await axios.post(`${RUNPOD_URL}/runsync`, data, { headers: HEADERS });
         
-        // Try to parse JSON from the response
-        let questionsData;
+        if (response.status === 200) {
+            console.log('RunPod response:', response.data);
+            return response.data?.id || null;
+        }
+        return null;
+    } catch (error) {
+        console.error('Error calling RunPod API:', error);
+        return null;
+    }
+}
+
+// Poll RunPod result
+async function pollRunpodResult(runId: string, pollInterval: number = 2, timeout: number = 180): Promise<any | null> {
+    const url = `${RUNPOD_URL}/status/${runId}`;
+    const start = Date.now();
+
+    while (true) {
         try {
-            // Try multiple approaches to extract JSON
-            let jsonString = generatedContent;
-            
-            // Remove markdown code blocks if present
-            if (jsonString.includes('```')) {
-                const codeBlockMatch = jsonString.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
-                if (codeBlockMatch) {
-                    jsonString = codeBlockMatch[1];
+            const response = await axios.post(url, {}, { headers: HEADERS });
+
+            if (response.status === 200) {
+                const result = response.data;
+                const status = result?.status;
+                
+                if (status === "COMPLETED") {
+                    console.log('RunPod result:', result);
+                    return result;
+                }
+                if (status === "FAILED" || status === "CANCELLED") {
+                    return null;
                 }
             }
-            
-            // Extract JSON object from the response
-            const jsonMatch = jsonString.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                jsonString = jsonMatch[0];
+
+            if (Date.now() - start > timeout * 1000) {
+                return null;
             }
-            
-            // Clean up the JSON string
-            jsonString = jsonString.trim();
-            
-            // Validate that we have a complete JSON object
-            if (!jsonString.startsWith('{') || !jsonString.endsWith('}')) {
-                throw new Error("Invalid JSON format - missing braces");
+
+            await new Promise(resolve => setTimeout(resolve, pollInterval * 1000));
+        } catch (error) {
+            console.error('Error polling RunPod result:', error);
+            return null;
+        }
+    }
+}
+
+// Extract content and remove thinking
+function extractContent(outputStr: string | RunpodOutput): string {
+    let content = "";
+    
+    // Handle the case where outputStr is from the API response structure
+    if (typeof outputStr === 'object' && outputStr !== null) {
+        // If it's the full API response, extract the tokens
+        const apiResponse = outputStr as RunpodOutput;
+        if (apiResponse.choices && apiResponse.choices[0] && apiResponse.choices[0].tokens) {
+            const tokens = apiResponse.choices[0].tokens;
+            if (Array.isArray(tokens) && tokens.length > 0) {
+                content = tokens[0]; // Get the first token which contains the response
             }
-            
-            questionsData = JSON.parse(jsonString);
-            
-            // Validate the structure
-            if (!questionsData.questions || !Array.isArray(questionsData.questions) || questionsData.questions.length === 0) {
-                throw new Error("Invalid questions structure");
+        }
+    } else if (typeof outputStr === 'string') {
+        content = outputStr;
+    }
+    
+    // Remove <think> blocks completely
+    content = content.replace(/<think>[\s\S]*?<\/think>/g, '');
+    
+    // Extract questions section
+    if (content.includes("<questions>")) {
+        const questionsStart = content.indexOf("<questions>");
+        const questionsEnd = content.indexOf("</questions>") + "</questions>".length;
+        if (questionsEnd > questionsStart) {
+            content = content.substring(questionsStart, questionsEnd);
+        } else {
+            // If no closing tag, take from <questions> to end
+            content = content.substring(questionsStart);
+            // Add closing tag if missing
+            if (!content.includes("</questions>")) {
+                content += "</questions>";
             }
-            
-            if (!questionsData.metadata) {
-                throw new Error("Missing metadata");
-            }
-            
-        } catch (parseError) {
-            console.log("Failed to parse AI response as JSON:", parseError);
-            console.log("Original response:", generatedContent);
-            
-            // Try to create a basic fallback structure for debugging
-            const fallbackData: any = {
-                metadata: {
-                    total_questions: totalQuestions,
-                    level: level,
-                    subject: subject,
-                    type: type,
-                    bloom_taxonomy: bloomTaxonomy,
-                    created_at: new Date().toISOString(),
-                    total_score: totalQuestions * 2
-                },
-                questions: [] as any[]
-            };
-            
-            // Create simple fallback questions
-            for (let i = 1; i <= Math.min(totalQuestions, 3); i++) {
-                fallbackData.questions.push({
-                    id: i,
-                    question: `โจทย์ที่ ${i}: กรุณาติดต่อผู้ดูแลระบบ (AI response error)`,
-                    question_type: "multiple_choice",
-                    options: ["ตัวเลือก 1", "ตัวเลือก 2", "ตัวเลือก 3", "ตัวเลือก 4"],
-                    correct_answer: "ตัวเลือก 1",
-                    correct_option_index: 0,
-                    explanation: "เกิดข้อผิดพลาดในการสร้างโจทย์ กรุณาลองใหม่",
-                    score: 2,
-                    difficulty: "medium"
+        }
+        content = content.replace(/\n/g, " ").trim();
+    }
+    
+    return content;
+}
+
+// Parse XML to JSON
+function parseXmlToJson(xmlContent: string): any {
+    try {
+        console.log('Parsing XML content:', xmlContent);
+        // Simple XML parsing for the specific structure
+        const questionMatch = xmlContent.match(/<question>([\s\S]*?)<\/question>/);
+        if (!questionMatch) return null;
+
+        const questionContent = questionMatch[1];
+        
+        // Extract fields
+        const text = questionContent.match(/<text>([\s\S]*?)<\/text>/)?.[1]?.trim() || "";
+        const type = questionContent.match(/<type>([\s\S]*?)<\/type>/)?.[1]?.trim() || "multiple_choice";
+        
+        // Extract options
+        const optionsMatch = questionContent.match(/<options>([\s\S]*?)<\/options>/);
+        const options: string[] = [];
+        let correctOptionIndex = -1;
+        
+        if (optionsMatch) {
+            const optionMatches = optionsMatch[1].match(/<option>([\s\S]*?)<\/option>/g);
+            if (optionMatches) {
+                optionMatches.forEach(match => {
+                    const option = match.replace(/<\/?option>/g, '').trim();
+                    options.push(option);
                 });
             }
-            
-            return {
-                title: "เกิดข้อผิดพลาด",
-                message: "ไม่สามารถสร้างโจทย์ได้ กรุณาลองใหม่ (การตอบสนองจาก AI ไม่สมบูรณ์)",
-                type: "error",
-                fallbackData: fallbackData
-            };
+        }
+        
+        const correctAnswer = questionContent.match(/<correct_answer>([\s\S]*?)<\/correct_answer>/)?.[1]?.trim() || "";
+        if (correctAnswer && options.length > 0) {
+            correctOptionIndex = options.findIndex(opt => opt === correctAnswer);
+        }
+        
+        let explanation = questionContent.match(/<explanation>([\s\S]*?)<\/explanation>/)?.[1]?.trim() || "";
+        explanation = explanation.replace(/<br>/g, '\n\n');
+        
+        const score = parseInt(questionContent.match(/<score>([\s\S]*?)<\/score>/)?.[1]?.trim() || "2");
+        const difficulty = questionContent.match(/<difficulty>([\s\S]*?)<\/difficulty>/)?.[1]?.trim() || "medium";
+        
+        // Extract bloom levels
+        const bloomLevelsMatch = questionContent.match(/<bloom_levels>([\s\S]*?)<\/bloom_levels>/);
+        let bloomLevel = "เข้าใจ";
+        if (bloomLevelsMatch) {
+            const levelMatch = bloomLevelsMatch[1].match(/<level>([\s\S]*?)<\/level>/);
+            if (levelMatch) {
+                bloomLevel = levelMatch[1].trim();
+            }
         }
 
-        // Randomize choices for each question to prevent predictable patterns
-        questionsData.questions = randomizeChoices(questionsData.questions);
+        return {
+            question: text,
+            question_type: type,
+            options: options,
+            correct_answer: correctAnswer,
+            correct_option_index: correctOptionIndex,
+            explanation: explanation,
+            score: score,
+            difficulty: difficulty,
+            bloom_level: bloomLevel
+        };
+    } catch (error) {
+        console.error('Error parsing XML to JSON:', error);
+        return null;
+    }
+}
 
-        // Calculate total score from individual questions
-        const totalScore = questionsData.questions.reduce((sum: number, q: any) => {
-            const score = typeof q.score === 'number' ? q.score : 2; // Default to 2 if not a number
-            return sum + score;
-        }, 0);
-        questionsData.metadata.total_score = Math.round(totalScore * 100) / 100;
-
+// Updated generateQuestions function with proper result processing
+async function generateQuestions(
+    subject: string, 
+    level: string, 
+    bloomTaxonomy: string, 
+    type: string, 
+    totalQuestions: number, 
+    content?: string
+): Promise<any> {
+    try {
+        const bloomLevels = bloomTaxonomy.split(',').map(b => b.trim());
+        const maxWorkers = 3; // Use only 3 workers
+        const questions: any[] = [];
+        
+        // Distribute questions across workers
+        const batches = [];
+        for (let i = 0; i < totalQuestions; i += maxWorkers) {
+            const batchSize = Math.min(maxWorkers, totalQuestions - i);
+            batches.push(batchSize);
+        }
+        
+        let questionId = 1;
+        
+        // Process each batch
+        for (const batchSize of batches) {
+            const promises = [];
+            
+            // Send requests to workers
+            for (let j = 0; j < batchSize; j++) {
+                const userPrompt = createUserPrompt(
+                    subject, 
+                    level || "ไม่ระบุ", 
+                    type, 
+                    "medium", 
+                    bloomLevels,
+                    content || ADDITIONAL_REQUIREMENTS
+                );
+                
+                promises.push(callRunpodApi(userPrompt));
+            }
+            
+            // Wait for all requests to be submitted
+            const runIds = await Promise.all(promises);
+            
+            // Poll for results
+            const pollPromises = runIds.map(runId => 
+                runId ? pollRunpodResult(runId) : Promise.resolve(null)
+            );
+            
+            const results = await Promise.all(pollPromises);
+            
+            // Process results
+            for (const result of results) {
+                if (result && result.output && Array.isArray(result.output) && result.output.length > 0) {
+                    // Extract the actual response from the API structure
+                    const apiResponse = result.output[0]; // First item in output array
+                    console.log('API Response:', apiResponse);
+                    
+                    const content = extractContent(apiResponse);
+                    console.log('Extracted content:', content);
+                    
+                    const questionData = parseXmlToJson(content);
+                    console.log('Parsed question data:', questionData);
+                    
+                    if (questionData) {
+                        questions.push({
+                            id: questionId++,
+                            ...questionData
+                        });
+                    }
+                }
+            }
+        }
+        
+        // Create fallback questions if needed
+        while (questions.length < totalQuestions) {
+            questions.push({
+                id: questionId++,
+                question: `โจทย์ที่ ${questionId - 1}: กรุณาติดต่อผู้ดูแลระบบ (AI response error)`,
+                question_type: "multiple_choice",
+                options: ["ตัวเลือก 1", "ตัวเลือก 2", "ตัวเลือก 3", "ตัวเลือก 4"],
+                correct_answer: "ตัวเลือก 1",
+                correct_option_index: 0,
+                explanation: "เกิดข้อผิดพลาดในการสร้างโจทย์ กรุณาลองใหม่",
+                score: 2,
+                difficulty: "medium",
+                bloom_level: "เข้าใจ"
+            });
+        }
+        
+        // Randomize choices
+        const randomizedQuestions = randomizeChoices(questions.slice(0, totalQuestions));
+        
+        // Calculate total score
+        const totalScore = randomizedQuestions.reduce((sum, q) => sum + (q.score || 2), 0);
+        
+        const questionsData = {
+            metadata: {
+                total_questions: totalQuestions,
+                level: level,
+                subject: subject,
+                type: type,
+                bloom_taxonomy: bloomTaxonomy,
+                created_at: new Date().toISOString(),
+                total_score: totalScore
+            },
+            questions: randomizedQuestions
+        };
+        
         return questionsData;
     } catch (error: any) {
-        console.log("Error generating questions:", error.message);
+        console.error("Error generating questions:", error.message);
         return {
             title: "เกิดข้อผิดพลาด",
             message: "ไม่สามารถเชื่อมต่อกับระบบสร้างโจทย์ได้",
@@ -249,18 +374,14 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
         const level = formData.get("h_level") as string;
         const content = formData.get("h_content") as string;
 
-        // Parse multiple Bloom's Taxonomy values
         const bloomTaxonomies = bloomtax ? bloomtax.split(',').map(b => b.trim()).filter(b => b.length > 0) : [];
 
-        // Subject and type validation for default values
         if (!subject || !type) {
             subject = "พีชคณิต";
             type = "ปรนัย";
         }
 
-        // Check empty fields
         if (!name || !subject || bloomTaxonomies.length === 0 || !type || !totalQuestions) {
-            console.log("Empty fields detected:", { name, subject, bloomTaxonomies, type, totalQuestions });
             return {
                 title: "เกิดข้อผิดพลาด",
                 message: "กรุณากรอกข้อมูลให้ครบถ้วน",
@@ -268,7 +389,6 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
             };
         }
 
-        // Validate total questions
         const totalQuestionsNumber = parseInt(totalQuestions);
         if (isNaN(totalQuestionsNumber) || totalQuestionsNumber <= 0) {
             return {
@@ -278,17 +398,14 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
             };
         }
 
-        // Get teacher data
         const userData = await getUserData();
         if (!userData) return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลผู้ใช้", type: "error" };
 
-        // If content is already a questions object (from the questions preview modal), save it directly
+        // Check if content is already processed questions data
         if (content && content.trim()) {
-            let questionsData;
             try {
-                questionsData = JSON.parse(content);
+                const questionsData = JSON.parse(content);
                 if (questionsData.questions && questionsData.metadata) {
-                    // This is already processed questions data, save it
                     const { error: homeworkError } = await supabase
                         .from("homework")
                         .insert({
@@ -316,14 +433,21 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
             }
         }
 
-        // Generate questions with AI
-        const generatedQuestions = await generateQuestions(subject, level || "ไม่ระบุ", bloomTaxonomies.join(', '), type, totalQuestionsNumber, content);
+        // Generate questions with RunPod
+        const generatedQuestions = await generateQuestions(
+            subject, 
+            level || "ไม่ระบุ", 
+            bloomTaxonomies.join(', '), 
+            type, 
+            totalQuestionsNumber, 
+            content
+        );
         
         if (generatedQuestions.type === "error") {
             return generatedQuestions;
         }
 
-        // Save directly to database
+        // Save to database
         const { error: homeworkError } = await supabase
             .from("homework")
             .insert({
@@ -340,7 +464,6 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
             
         if (homeworkError) return { title: "เกิดข้อผิดพลาด", message: homeworkError.message, type: "error" };
 
-        // Return questions data for preview
         return {
             title: "สำเร็จ",
             message: "สร้างและบันทึกชุดฝึกด้วย AI เรียบร้อยแล้ว",
@@ -348,7 +471,7 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
             questionsData: generatedQuestions,
         };
     } catch (error: any) {
-        console.log(`เกิดข้อผิดพลาดทางฝั่งเซิร์ฟเวอร์: ${error.message}`);
+        console.error(`Server error: ${error.message}`);
         return { title: "เกิดข้อผิดพลาดทางฝั่งเซิร์ฟเวอร์", message: "กรุณาลองใหม่ภายหลัง", type: "error" };
     }
 }
