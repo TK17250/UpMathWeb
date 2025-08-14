@@ -35,8 +35,8 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction, onSav
     const [homeworkName, setHomeworkName] = useState('');
     const [subject, setSubject] = useState('คณิตศาสตร์');
     const [level, setLevel] = useState('มัธยมศึกษาปีที่ 4');
-    const [bloomtax, setBloomtax] = useState('จดจำ');
-    const [selectedBloomTaxonomies, setSelectedBloomTaxonomies] = useState<string[]>(['จดจำ']);
+    const [bloomtax, setBloomtax] = useState('จำ');
+    const [selectedBloomTaxonomies, setSelectedBloomTaxonomies] = useState<string[]>(['จำ']);
     const [exerciseType, setExerciseType] = useState('ปรนัย');
     const [totalQuestions, setTotalQuestions] = useState('10');
     const [content, setContent] = useState('');
@@ -52,7 +52,7 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction, onSav
     const [showGeneratingBackdrop, setShowGeneratingBackdrop] = useState(false);
 
     // Available Bloom's Taxonomy options
-    const allBloomTaxonomies = ['จดจำ', 'เข้าใจ', 'ประยุกต์', 'วิเคราะห์', 'ประเมิน', 'สร้างสรรค์'];
+    const allBloomTaxonomies = ['จำ', 'เข้าใจ', 'ประยุกต์', 'วิเคราะห์', 'ประเมิน', 'สร้างสรรค์'];
     
     // Get available options (not yet selected)
     const availableBloomTaxonomies = allBloomTaxonomies.filter(
@@ -220,8 +220,8 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction, onSav
         setHomeworkName('');
         setSubject('คณิตศาสตร์');
         setLevel('มัธยมศึกษาปีที่ 4');
-        setBloomtax('จดจำ');
-        setSelectedBloomTaxonomies(['จดจำ']);
+        setBloomtax('จำ');
+        setSelectedBloomTaxonomies(['จำ']);
         setExerciseType('ปรนัย');
         setTotalQuestions('10');
         setContent('');
