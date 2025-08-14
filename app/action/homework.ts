@@ -213,9 +213,9 @@ function parseXmlToJson(xmlContent: string): any {
         }
         
         let explanation = questionContent.match(/<explanation>([\s\S]*?)<\/explanation>/)?.[1]?.trim() || "";
-        // Only replace <br> tags if they exist, otherwise leave explanation as is
-        if (explanation.includes('<br>')) {
-        explanation = explanation.replace(/<br>/g, '\n');
+        // Only replace <br> and <br /> tags if they exist, otherwise leave explanation as is
+        if (explanation.includes('<br>') || explanation.includes('<br />') || explanation.includes('<br/>')) {
+            explanation = explanation.replace(/<br\s*\/?>/g, '\n');
         }
         
         const score = parseInt(questionContent.match(/<score>([\s\S]*?)<\/score>/)?.[1]?.trim() || "2");
