@@ -72,7 +72,7 @@ function createUserPrompt(topic: string, gradeLevel: string, questionType: strin
 4. ความยาก: ${difficulty}
 5. bloom level: ${bloomStr}
 6. จำนวน: 1 ข้อ
-7. เพิ่มเติม: ${additionalRequirements}`;
+7. เพิ่มเติม: โจทย์จำเป็นต้องมีคำตอบ และถ้าโจทย์เป็นแบบ multiple choice (ปรนัย) ต้องมีคำตอบหลอกจำนวน 3 ข้อ (ทั้งหมด หลอก + จริง มี 4 ข้อ) โดยมาจากการคำนวนที่ผิดพลาด`;
 
     return prompt;
 }
@@ -86,6 +86,9 @@ async function callRunpodApi(userPrompt: string, systemPrompt: string = SYSTEM_P
                 sampling_params: { max_tokens: 9216 }
             }
         };
+
+        console.log(`System prompt : ${systemPrompt}`);
+        console.log(`User prompt : ${userPrompt}`);
 
         const response = await axios.post(`${RUNPOD_URL}/runsync`, data, { headers: HEADERS });
         
@@ -210,7 +213,10 @@ function parseXmlToJson(xmlContent: string): any {
         }
         
         let explanation = questionContent.match(/<explanation>([\s\S]*?)<\/explanation>/)?.[1]?.trim() || "";
-        explanation = explanation.replace(/<br>/g, '\n\n');
+        // Only replace <br> tags if they exist, otherwise leave explanation as is
+        if (explanation.includes('<br>')) {
+        explanation = explanation.replace(/<br>/g, '\n');
+        }
         
         const score = parseInt(questionContent.match(/<score>([\s\S]*?)<\/score>/)?.[1]?.trim() || "2");
         const difficulty = questionContent.match(/<difficulty>([\s\S]*?)<\/difficulty>/)?.[1]?.trim() || "medium";
@@ -275,7 +281,7 @@ async function generateQuestions(
                     subject, 
                     level || "ไม่ระบุ", 
                     type, 
-                    "medium", 
+                    "ยาก", 
                     bloomLevels,
                     content || ADDITIONAL_REQUIREMENTS
                 );
@@ -292,7 +298,8 @@ async function generateQuestions(
             );
             
             const results = await Promise.all(pollPromises);
-            
+            console.log("Results:", results);
+
             // Process results
             for (const result of results) {
                 if (result && result.output && Array.isArray(result.output) && result.output.length > 0) {
