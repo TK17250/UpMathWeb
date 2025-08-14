@@ -281,7 +281,7 @@ async function generateQuestions(
                     subject, 
                     level || "ไม่ระบุ", 
                     type, 
-                    "ยาก", 
+                    "ปานกลาง", 
                     bloomLevels,
                     content || ADDITIONAL_REQUIREMENTS
                 );
