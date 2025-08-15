@@ -264,7 +264,7 @@ function parseXmlToJson(xmlContent: string): QuestionData | null {
 }
 
 // Improved polling function with better timeout handling
-async function pollRunpodResult(runId: string, timeout: number = 180): Promise<any | null> {
+async function pollRunpodResult(runId: string, timeout: number = 600): Promise<any | null> {
     const url = `${RUNPOD_URL}/status/${runId}`;
     const start = Date.now();
     let attemptCount = 0;
@@ -333,7 +333,7 @@ async function pollRunpodResult(runId: string, timeout: number = 180): Promise<a
     }
 }
 
-// Modified generateQuestions function with updated task generation logic
+// Improved parallel question generation with better worker distribution
 async function generateQuestions(
     subject: string, 
     level: string, 
@@ -355,43 +355,37 @@ async function generateQuestions(
             };
         }
 
-        // Improved concurrency management - utilize all available workers
-        const MAX_WORKERS = 10; // Based on your RunPod setup
-        const maxConcurrency = Math.min(MAX_WORKERS, totalQuestions);
-        
-        // Calculate optimal batch size to distribute work evenly
-        const optimalBatchSize = Math.min(
-            Math.ceil(totalQuestions / Math.ceil(totalQuestions / maxConcurrency)),
-            maxConcurrency
-        );
+        // Fixed: Better worker calculation and distribution
+        const MAX_WORKERS = 5; // Your RunPod setup
+        const OPTIMAL_CONCURRENT_REQUESTS = Math.min(5, totalQuestions); // Limit to 5 concurrent API calls
         
         const questions: QuestionData[] = [];
         let questionId = 1;
         let totalAttempts = 0;
-        const maxAttempts = totalQuestions * 3;
+        const maxAttempts = totalQuestions * 4; // Increased retry limit
         
-        console.log(`🚀 Starting generation: ${totalQuestions} questions with ${maxConcurrency} workers, batch size: ${optimalBatchSize}`);
+        console.log(`🚀 Starting generation: ${totalQuestions} questions with max ${OPTIMAL_CONCURRENT_REQUESTS} concurrent requests`);
         console.log(`📊 Difficulties: [${difficulties.join(', ')}], All Bloom levels per question: [${bloomLevels.join(', ')}]`);
         
-        // Track failed attempts per difficulty (bloom levels are now used together)
+        // Track failed attempts per difficulty
         const failureTracker = new Map<string, number>();
         
         // Create a queue of all question generation tasks
-        // Modified: Each task now uses ALL bloom levels instead of cycling through them
         const taskQueue: Array<{
             difficulty: string;
-            bloomLevels: string[]; // Changed from bloomLevel to bloomLevels array
+            bloomLevels: string[];
             taskId: number;
+            retryCount: number; // Track individual task retries
         }> = [];
         
-        // Pre-populate task queue with balanced distribution of difficulties only
-        // Each question will use ALL selected bloom levels
+        // Pre-populate task queue with balanced distribution
         for (let i = 0; i < totalQuestions; i++) {
             const selectedDifficulty = difficulties[i % difficulties.length];
             taskQueue.push({
                 difficulty: selectedDifficulty,
                 bloomLevels: bloomLevels, // Use ALL bloom levels for each question
-                taskId: i + 1
+                taskId: i + 1,
+                retryCount: 0
             });
         }
         
@@ -401,23 +395,32 @@ async function generateQuestions(
             [taskQueue[i], taskQueue[j]] = [taskQueue[j], taskQueue[i]];
         }
         
+        // Worker pool management
+        const activeWorkers = new Set<number>();
+        const maxRetryPerTask = 3;
+        
         while (questions.length < totalQuestions && totalAttempts < maxAttempts && taskQueue.length > 0) {
+            // Calculate how many tasks to process in this batch
             const remainingQuestions = totalQuestions - questions.length;
-            const currentBatchSize = Math.min(optimalBatchSize, remainingQuestions, taskQueue.length);
+            const availableWorkers = OPTIMAL_CONCURRENT_REQUESTS;
+            const tasksToProcess = Math.min(
+                availableWorkers,
+                remainingQuestions,
+                taskQueue.length
+            );
             
-            console.log(`📦 Batch ${Math.floor(totalAttempts / optimalBatchSize) + 1}: Processing ${currentBatchSize} tasks (${questions.length}/${totalQuestions} completed, ${taskQueue.length} in queue)`);
+            console.log(`📦 Batch ${Math.floor(totalAttempts / OPTIMAL_CONCURRENT_REQUESTS) + 1}: Processing ${tasksToProcess} tasks (${questions.length}/${totalQuestions} completed, ${taskQueue.length} in queue)`);
             
             // Take tasks from the front of the queue
-            const currentBatch = taskQueue.splice(0, currentBatchSize);
+            const currentBatch = taskQueue.splice(0, tasksToProcess);
             
             // Filter out tasks that have failed too many times
-            // Modified: Use difficulty as key since bloom levels are now combined
             const validTasks = currentBatch.filter(task => {
-                const combinationKey = task.difficulty; // Only difficulty as key
-                const failures = failureTracker.get(combinationKey) || 0;
+                const combinationKey = task.difficulty;
+                const globalFailures = failureTracker.get(combinationKey) || 0;
                 
-                if (failures >= 3) {
-                    console.warn(`⚠️ Skipping task ${task.taskId} (${combinationKey}) due to repeated failures`);
+                if (globalFailures >= 5 || task.retryCount >= maxRetryPerTask) {
+                    console.warn(`⚠️ Skipping task ${task.taskId} (${combinationKey}) - Global failures: ${globalFailures}, Task retries: ${task.retryCount}`);
                     return false;
                 }
                 return true;
@@ -425,88 +428,108 @@ async function generateQuestions(
             
             if (validTasks.length === 0) {
                 console.warn('⚠️ No valid tasks in this batch, trying next batch');
-                continue;
+                break; // Exit if no valid tasks remain
             }
             
-            // Create API call promises with staggered execution to distribute load
-            const apiPromises = validTasks.map((task, workerIndex) => {
+            // Create worker assignments
+            const workerTasks = validTasks.map((task, index) => {
+                const workerId = index + 1;
+                activeWorkers.add(workerId);
+                
                 const userPrompt = createUserPrompt(
                     subject, 
                     level || "ไม่ระบุ", 
                     type, 
                     task.difficulty,
-                    task.bloomLevels, // Pass ALL bloom levels
+                    task.bloomLevels,
                     content || ADDITIONAL_REQUIREMENTS
                 );
                 
-                // Stagger API calls by 200ms intervals to reduce server load
-                return new Promise<{runId: string | null, metadata: any}>(resolve => {
-                    setTimeout(async () => {
-                        console.log(`🔄 Worker ${workerIndex + 1} starting task ${task.taskId} (${task.difficulty}, all blooms: ${task.bloomLevels.join(',')})`);
-                        const runId = await callRunpodApi(userPrompt);
-                        resolve({
-                            runId,
-                            metadata: {
-                                difficulty: task.difficulty,
-                                bloomLevels: task.bloomLevels, // Changed from bloomLevel to bloomLevels
-                                taskId: task.taskId,
-                                workerIndex: workerIndex + 1
-                            }
-                        });
-                    }, workerIndex * 200); // Stagger by 200ms
-                });
+                return {
+                    workerId,
+                    task,
+                    userPrompt
+                };
             });
             
-            // Execute all API calls in parallel
-            const apiResults = await Promise.allSettled(apiPromises);
+            console.log(`👥 Assigning ${workerTasks.length} tasks to workers: [${Array.from(activeWorkers).join(', ')}]`);
             
-            // Collect valid run IDs
-            const validRunTasks = apiResults
-                .map((result, index) => {
-                    if (result.status === 'fulfilled' && result.value.runId !== null) {
-                        return {
-                            runId: result.value.runId,
-                            metadata: result.value.metadata
-                        };
-                    }
-                    // Re-queue failed API tasks
-                    const failedTask = validTasks[index];
-                    const combinationKey = failedTask.difficulty; // Modified key
+            // Execute API calls with proper error handling
+            const apiResults = await Promise.allSettled(
+                workerTasks.map(async (workerTask, index) => {
+                    // Stagger API calls by 100ms to reduce server load
+                    await new Promise(resolve => setTimeout(resolve, index * 100));
+                    
+                    console.log(`🔄 Worker ${workerTask.workerId} starting task ${workerTask.task.taskId} (${workerTask.task.difficulty} ${workerTask.task.bloomLevels.join(', ')}, attempt ${workerTask.task.retryCount + 1})`);
+                    
+                    const runId = await callRunpodApi(workerTask.userPrompt);
+                    return {
+                        runId,
+                        workerId: workerTask.workerId,
+                        task: workerTask.task
+                    };
+                })
+            );
+            
+            // Collect valid run IDs and handle failed API calls
+            const validRunTasks: Array<{runId: string, workerId: number, task: any}> = [];
+            const failedTasks: Array<any> = [];
+            
+            apiResults.forEach((result, index) => {
+                const workerTask = workerTasks[index];
+                activeWorkers.delete(workerTask.workerId);
+                
+                if (result.status === 'fulfilled' && result.value.runId !== null) {
+                    validRunTasks.push({
+                        runId: result.value.runId,
+                        workerId: result.value.workerId,
+                        task: result.value.task
+                    });
+                } else {
+                    // Handle failed API call
+                    const failedTask = workerTask.task;
+                    failedTask.retryCount++;
+                    
+                    const combinationKey = failedTask.difficulty;
                     failureTracker.set(combinationKey, (failureTracker.get(combinationKey) || 0) + 1);
                     
-                    // Add back to queue if not failed too many times
-                    if ((failureTracker.get(combinationKey) || 0) < 3) {
-                        taskQueue.push(failedTask);
+                    // Re-queue if not exceeded retry limits
+                    if (failedTask.retryCount < maxRetryPerTask && (failureTracker.get(combinationKey) || 0) < 5) {
+                        failedTasks.push(failedTask);
                     }
-                    return null;
-                })
-                .filter(task => task !== null);
+                    
+                    console.warn(`❌ Worker ${workerTask.workerId} API call failed for task ${failedTask.taskId} (retry ${failedTask.retryCount}/${maxRetryPerTask})`);
+                }
+            });
+            
+            // Re-queue failed tasks
+            taskQueue.push(...failedTasks);
             
             if (validRunTasks.length === 0) {
                 console.error('❌ No valid run IDs received from batch');
-                totalAttempts += currentBatchSize;
+                totalAttempts += tasksToProcess;
                 continue;
             }
             
-            console.log(`🔄 Received ${validRunTasks.length}/${currentBatchSize} valid run IDs from ${validRunTasks.length} workers, polling results...`);
+            console.log(`🔄 Received ${validRunTasks.length}/${tasksToProcess} valid run IDs, polling results...`);
             
-            // Poll results with distributed timing to avoid overwhelming the server
-            const pollPromises = validRunTasks.map((task, index) => {
-                return new Promise(resolve => {
-                    // Stagger polling start by 500ms intervals to reduce server load
-                    setTimeout(async () => {
-                        console.log(`🔍 Worker ${task.metadata.workerIndex} polling task ${task.metadata.taskId}...`);
-                        const result = await pollRunpodResult(task.runId);
-                        resolve({
-                            result,
-                            metadata: task.metadata,
-                            runId: task.runId
-                        });
-                    }, index * 500);
-                });
-            });
-            
-            const pollResults = await Promise.allSettled(pollPromises);
+            // Poll results with staggered timing
+            const pollResults = await Promise.allSettled(
+                validRunTasks.map(async (runTask, index) => {
+                    // Stagger polling start by 300ms intervals
+                    await new Promise(resolve => setTimeout(resolve, index * 300));
+                    
+                    console.log(`🔍 Worker ${runTask.workerId} polling task ${runTask.task.taskId}...`);
+                    const result = await pollRunpodResult(runTask.runId, 600); // 10 minute timeout
+                    
+                    return {
+                        result,
+                        workerId: runTask.workerId,
+                        task: runTask.task,
+                        runId: runTask.runId
+                    };
+                })
+            );
             
             // Process results
             let successCount = 0;
@@ -514,103 +537,67 @@ async function generateQuestions(
             
             for (const pollResult of pollResults) {
                 if (pollResult.status === 'fulfilled') {
-                    const { result, metadata, runId } = pollResult.value as any;
-                    const combinationKey = metadata.difficulty; // Modified key
+                    const { result, workerId, task, runId } = pollResult.value;
+                    const combinationKey = task.difficulty;
                     
-                    if (result && result.output) {
+                    if (result && result.output && Array.isArray(result.output) && result.output.length > 0) {
                         try {
-                            if (Array.isArray(result.output) && result.output.length > 0) {
-                                const apiResponse = result.output[0];
-                                const content = extractContent(apiResponse);
-                                const questionData = parseXmlToJson(content);
+                            const apiResponse = result.output[0];
+                            const extractedContent = extractContent(apiResponse);
+                            const questionData = parseXmlToJson(extractedContent);
+                            
+                            if (questionData) {
+                                questionData.id = questionId++;
+                                questionData.difficulty = task.difficulty;
+                                questionData.bloom_level = task.bloomLevels.join(', ');
                                 
-                                if (questionData) {
-                                    questionData.id = questionId++;
-                                    questionData.difficulty = metadata.difficulty;
-                                    // Store all bloom levels as a combined string
-                                    questionData.bloom_level = metadata.bloomLevels.join(', ');
-                                    
-                                    questions.push(questionData);
-                                    successCount++;
-                                    console.log(`✅ Worker ${metadata.workerIndex} completed task ${metadata.taskId}: question ${questionData.id} (${metadata.difficulty}, all blooms: ${metadata.bloomLevels.join(',')})`);
-                                } else {
-                                    console.warn(`❌ Worker ${metadata.workerIndex} failed to parse task ${metadata.taskId}`);
-                                    failureTracker.set(combinationKey, (failureTracker.get(combinationKey) || 0) + 1);
-                                    failureCount++;
-                                    
-                                    // Re-queue if not failed too many times
-                                    if ((failureTracker.get(combinationKey) || 0) < 3) {
-                                        taskQueue.push({
-                                            difficulty: metadata.difficulty,
-                                            bloomLevels: metadata.bloomLevels, // Changed from bloomLevel
-                                            taskId: metadata.taskId
-                                        });
-                                    }
-                                }
+                                questions.push(questionData);
+                                successCount++;
+                                console.log(`✅ Worker ${workerId} completed task ${task.taskId}: question ${questionData.id} (${task.difficulty}, ${task.bloomLevels.join(', ')})`);
                             } else {
-                                console.warn(`❌ Worker ${metadata.workerIndex} got invalid output structure for task ${metadata.taskId}`);
-                                failureTracker.set(combinationKey, (failureTracker.get(combinationKey) || 0) + 1);
+                                console.warn(`❌ Worker ${workerId} failed to parse task ${task.taskId}`);
+                                handleTaskFailure(task, combinationKey, failureTracker, taskQueue, maxRetryPerTask);
                                 failureCount++;
-                                
-                                // Re-queue if not failed too many times
-                                if ((failureTracker.get(combinationKey) || 0) < 3) {
-                                    taskQueue.push({
-                                        difficulty: metadata.difficulty,
-                                        bloomLevels: metadata.bloomLevels, // Changed from bloomLevel
-                                        taskId: metadata.taskId
-                                    });
-                                }
                             }
                         } catch (error: any) {
-                            console.error(`❌ Worker ${metadata.workerIndex} error processing task ${metadata.taskId}:`, error.message);
-                            failureTracker.set(combinationKey, (failureTracker.get(combinationKey) || 0) + 1);
+                            console.error(`❌ Worker ${workerId} error processing task ${task.taskId}:`, error.message);
+                            handleTaskFailure(task, combinationKey, failureTracker, taskQueue, maxRetryPerTask);
                             failureCount++;
-                            
-                            // Re-queue if not failed too many times
-                            if ((failureTracker.get(combinationKey) || 0) < 3) {
-                                taskQueue.push({
-                                    difficulty: metadata.difficulty,
-                                    bloomLevels: metadata.bloomLevels, // Changed from bloomLevel
-                                    taskId: metadata.taskId
-                                });
-                            }
                         }
                     } else {
-                        console.warn(`❌ Worker ${metadata.workerIndex} got no result for task ${metadata.taskId}`);
-                        failureTracker.set(combinationKey, (failureTracker.get(combinationKey) || 0) + 1);
+                        console.warn(`❌ Worker ${workerId} got invalid result for task ${task.taskId}`);
+                        handleTaskFailure(task, combinationKey, failureTracker, taskQueue, maxRetryPerTask);
                         failureCount++;
-                        
-                        // Re-queue if not failed too many times
-                        if ((failureTracker.get(combinationKey) || 0) < 3) {
-                            taskQueue.push({
-                                difficulty: metadata.difficulty,
-                                bloomLevels: metadata.bloomLevels, // Changed from bloomLevel
-                                taskId: metadata.taskId
-                            });
-                        }
                     }
+                } else {
+                    console.error(`❌ Polling failed:`, pollResult.reason);
+                    failureCount++;
                 }
             }
             
-            console.log(`📈 Batch completed: ${successCount} success, ${failureCount} failed (${questions.length}/${totalQuestions} total, ${taskQueue.length} remaining in queue)`);
-            totalAttempts += currentBatchSize;
+            console.log(`📈 Batch completed: ${successCount} success, ${failureCount} failed (${questions.length}/${totalQuestions} total, ${taskQueue.length} remaining)`);
+            totalAttempts += tasksToProcess;
             
-            // Add progressive delay between batches based on success rate
-            if (questions.length < totalQuestions && totalAttempts < maxAttempts) {
-                const batchNumber = Math.floor(totalAttempts / optimalBatchSize);
+            // Dynamic delay based on success rate and server load
+            if (questions.length < totalQuestions && totalAttempts < maxAttempts && taskQueue.length > 0) {
                 const successRate = successCount / (successCount + failureCount);
+                const batchNumber = Math.floor(totalAttempts / OPTIMAL_CONCURRENT_REQUESTS);
                 
-                // Reduce delay if success rate is high, increase if low
-                let delayMs = 2000; // Base delay
+                let delayMs = 1500; // Base delay
+                
+                // Adjust delay based on success rate
                 if (successRate > 0.8) {
-                    delayMs = 1000; // Faster if doing well
+                    delayMs = 800; // Faster if doing well
                 } else if (successRate < 0.5) {
-                    delayMs = 4000; // Slower if struggling
+                    delayMs = 3000; // Slower if struggling
+                } else if (successRate < 0.3) {
+                    delayMs = 5000; // Much slower if really struggling
                 }
                 
-                delayMs = Math.min(delayMs + (batchNumber * 200), 6000); // Progressive increase with cap
+                // Progressive increase with reasonable cap
+                delayMs = Math.min(delayMs + (batchNumber * 150), 8000);
                 
-                console.log(`⏳ Waiting ${delayMs}ms before next batch (success rate: ${(successRate * 100).toFixed(1)}%)...`);
+                console.log(`⏳ Waiting ${delayMs}ms before next batch (success rate: ${(successRate * 100).toFixed(1)}%, active workers reset)...`);
                 await new Promise(resolve => setTimeout(resolve, delayMs));
             }
         }
@@ -633,7 +620,7 @@ async function generateQuestions(
                 explanation: "เกิดข้อผิดพลาดในการสร้างโจทย์ กรุณาลองใหม่",
                 score: 2,
                 difficulty: fallbackDifficulty,
-                bloom_level: bloomLevels.join(', ') // Use all bloom levels for fallback too
+                bloom_level: bloomLevels.join(', ')
             });
         }
         
@@ -654,10 +641,10 @@ async function generateQuestions(
                 created_at: new Date().toISOString(),
                 total_score: totalScore,
                 generation_stats: {
-                    workers_used: maxConcurrency,
-                    batch_size: optimalBatchSize,
+                    max_concurrent_requests: OPTIMAL_CONCURRENT_REQUESTS,
                     total_attempts: totalAttempts,
-                    success_rate: (questions.length / totalAttempts * 100).toFixed(1) + '%'
+                    success_rate: (questions.length / totalAttempts * 100).toFixed(1) + '%',
+                    fallback_questions: totalQuestions - (questions.filter(q => !q.question.includes('กรุณาติดต่อผู้ดูแลระบบ')).length)
                 }
             },
             questions: randomizedQuestions
@@ -671,6 +658,20 @@ async function generateQuestions(
             message: `ไม่สามารถสร้างโจทย์ได้: ${error.message}`,
             type: "error"
         };
+    }
+}
+
+// Helper function to handle task failures with proper retry logic
+function handleTaskFailure(task: any, combinationKey: string, failureTracker: Map<string, number>, taskQueue: any[], maxRetryPerTask: number) {
+    task.retryCount++;
+    failureTracker.set(combinationKey, (failureTracker.get(combinationKey) || 0) + 1);
+    
+    // Re-queue if not exceeded retry limits
+    if (task.retryCount < maxRetryPerTask && (failureTracker.get(combinationKey) || 0) < 5) {
+        taskQueue.push(task);
+        console.log(`🔄 Re-queued task ${task.taskId} (retry ${task.retryCount}/${maxRetryPerTask})`);
+    } else {
+        console.log(`❌ Task ${task.taskId} exceeded retry limits and will not be re-queued`);
     }
 }
 
