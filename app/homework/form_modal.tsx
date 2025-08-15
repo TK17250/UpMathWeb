@@ -12,11 +12,12 @@ interface CreateHomeworkModalProps {
 }
 
 // Submit button with loading state
-function SubmitButton({ isGenerating, homeworkName, onValidationFailed, selectedBloomTaxonomies }: { 
+function SubmitButton({ isGenerating, homeworkName, onValidationFailed, selectedBloomTaxonomies, selectedDifficultyLevels }: { 
     isGenerating: boolean;
     homeworkName: string;
     onValidationFailed: () => void;
     selectedBloomTaxonomies: string[];
+    selectedDifficultyLevels: string[];
 }) {
     return (
         <button
@@ -37,6 +38,8 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction, onSav
     const [level, setLevel] = useState('มัธยมศึกษาปีที่ 4');
     const [bloomtax, setBloomtax] = useState('จำ');
     const [selectedBloomTaxonomies, setSelectedBloomTaxonomies] = useState<string[]>(['จำ']);
+    const [difficulty, setDifficulty] = useState('ง่าย');
+    const [selectedDifficultyLevels, setSelectedDifficultyLevels] = useState<string[]>(['ง่าย']);
     const [exerciseType, setExerciseType] = useState('ปรนัย');
     const [totalQuestions, setTotalQuestions] = useState('10');
     const [content, setContent] = useState('');
@@ -53,7 +56,7 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction, onSav
 
     // Available Bloom's Taxonomy options
     const allBloomTaxonomies = ['จำ', 'เข้าใจ', 'ประยุกต์', 'วิเคราะห์', 'ประเมิน', 'สร้างสรรค์'];
-    
+
     // Get available options (not yet selected)
     const availableBloomTaxonomies = allBloomTaxonomies.filter(
         taxonomy => !selectedBloomTaxonomies.includes(taxonomy)
@@ -117,6 +120,7 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction, onSav
                 h_subject: 'พีชคณิต',
                 h_level: level,
                 h_bloomtax: selectedBloomTaxonomies.join(','),
+                h_difficulty: selectedDifficultyLevels.join(','),
                 h_type: 'ปรนัย',
                 h_total_questions: totalQuestions,
                 h_content: content
@@ -222,6 +226,8 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction, onSav
         setLevel('มัธยมศึกษาปีที่ 4');
         setBloomtax('จำ');
         setSelectedBloomTaxonomies(['จำ']);
+        setDifficulty('ง่าย');
+        setSelectedDifficultyLevels(['ง่าย']);
         setExerciseType('ปรนัย');
         setTotalQuestions('10');
         setContent('');
@@ -330,23 +336,6 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction, onSav
                     {/* Subject */}
                     <div className="mb-4 opacity-70">
                         <label htmlFor="subject" className="block text-white mb-1">เนื้อหา (ปัจจุบันมีแค่ พีชคณิต)</label>
-                        {/* <select
-                            id="subject"
-                            name="h_subject"
-                            value={subject}
-                            onChange={(e) => setSubject(e.target.value)}
-                            className="w-full px-4 py-2 rounded-md bg-[#203D4F] text-white border-2 border-[#002D4A] focus:outline-none focus:border-[#80ED99] transition-all duration-200"
-                            required
-                        >
-                            <option value="คณิตศาสตร์">คณิตศาสตร์</option>
-                            <option value="คณิตศาสตร์เพิ่มเติม">คณิตศาสตร์เพิ่มเติม</option>
-                            <option value="เลขคณิต">เลขคณิต</option>
-                            <option value="พีชคณิต">พีชคณิต</option>
-                            <option value="เรขาคณิต">เรขาคณิต</option>
-                            <option value="ตรีโกณมิติ">ตรีโกณมิติ</option>
-                            <option value="แคลคูลัส">แคลคูลัส</option>
-                        </select> */}
-
                         <input
                             id="subject"
                             name="h_subject"
@@ -359,8 +348,8 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction, onSav
                         />
                     </div>
 
-                    {/* Form row for level, exercise type, and total questions */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    {/* Form row for level, exercise type, total questions, and difficulty */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                         {/* Level */}
                         <div>
                             <label htmlFor="level" className="block text-white mb-1">ระดับ</label>
@@ -406,16 +395,36 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction, onSav
                                 required
                             />
                         </div>
+
+                        {/* Difficulty Level */}
+                        <div>
+                            <label htmlFor="difficultyLevel" className="block text-white mb-1">ระดับความยาก</label>
+                            <select
+                                id="difficultyLevel"
+                                name="h_difficulty"
+                                value={selectedDifficultyLevels.join(',')}
+                                onChange={(e) => {
+                                    const value = e.target.value;
+                                    { setSelectedDifficultyLevels([value]);
+                                    }
+                                }}
+                                className="w-full px-4 py-2 rounded-md bg-[#203D4F] text-white border-2 border-[#002D4A] focus:outline-none focus:border-[#80ED99] transition-all duration-200"
+                            >
+                                <option value="ง่าย">ง่าย</option>
+                                <option value="ปานกลาง">ปานกลาง</option>
+                                <option value="ยาก">ยาก</option>
+                            </select>
+                        </div>
                     </div>
 
-                    {/* Bloom Taxonomy - Full Width */}
+                    {/* Bloom Taxonomy */}
                     <div className="mb-4">
-                        <label htmlFor="subjectDetail" className="block text-white mb-1">ระดับขั้นของโจทย์</label>
+                        <label htmlFor="bloomTaxonomy" className="block text-white mb-1">ระดับขั้นของโจทย์</label>
                         
                         {/* Selection Area */}
                         <div className="flex gap-2 mb-2">
                             <select
-                                id="subjectDetail"
+                                id="bloomTaxonomy"
                                 value={bloomtax}
                                 onChange={(e) => setBloomtax(e.target.value)}
                                 className="flex-1 px-4 py-2 rounded-md bg-[#203D4F] text-white border-2 border-[#002D4A] focus:outline-none focus:border-[#80ED99] transition-all duration-200"
@@ -497,6 +506,7 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction, onSav
                             isGenerating={isGenerating} 
                             homeworkName={homeworkName}
                             selectedBloomTaxonomies={selectedBloomTaxonomies}
+                            selectedDifficultyLevels={selectedDifficultyLevels}
                             onValidationFailed={() => setIsGenerating(false)}
                         />
                     </div>
