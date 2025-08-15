@@ -25,6 +25,18 @@ interface RunpodOutput {
     choices: RunpodChoice[];
 }
 
+interface QuestionData {
+    id: number;
+    question: string;
+    question_type: string;
+    options: string[];
+    correct_answer: string;
+    correct_option_index: number;
+    explanation: string;
+    score: number;
+    difficulty: string;
+    bloom_level: string;
+}
 
 // Function to shuffle array using Fisher-Yates algorithm
 function shuffleArray<T>(array: T[]): T[] {
@@ -37,7 +49,7 @@ function shuffleArray<T>(array: T[]): T[] {
 }
 
 // Function to randomize choices in questions
-function randomizeChoices(questions: any[]): any[] {
+function randomizeChoices(questions: QuestionData[]): QuestionData[] {
     return questions.map(question => {
         if (question.question_type === 'multiple_choice' && 
             question.options && 
@@ -62,79 +74,76 @@ function randomizeChoices(questions: any[]): any[] {
     });
 }
 
-// Create user prompt for RunPod
-function createUserPrompt(topic: string, gradeLevel: string, questionType: string, difficulty: string, bloomLevels: string[], additionalRequirements: string = ADDITIONAL_REQUIREMENTS): string {
+// Modified createUserPrompt function to use all bloom levels in each question
+function createUserPrompt(
+    topic: string, 
+    gradeLevel: string, 
+    questionType: string, 
+    difficulty: string, 
+    bloomLevels: string[], // This will now contain ALL selected bloom levels
+    additionalRequirements: string = ADDITIONAL_REQUIREMENTS
+): string {
     const bloomStr = bloomLevels.join(", ");
     const prompt = `จงสร้างโจทย์คณิตศาสตร์คุณภาพสูงโดยกำหนดให้
 1. หัวข้อ: ${topic}
 2. สำหรับนักเรียน: ${gradeLevel}
 3. รูปแบบ: ${questionType}
-4. ความยาก: ${difficulty}
-5. bloom level: ${bloomStr}
+4. ระดับความยาก: ${difficulty}
+5. bloom level: ${bloomStr} (ใช้ทุกระดับที่กำหนดในโจทย์นี้)
 6. จำนวน: 1 ข้อ
-7. เพิ่มเติม: โจทย์จำเป็นต้องมีคำตอบ และถ้าโจทย์เป็นแบบ multiple choice (ปรนัย) ต้องมีคำตอบหลอกจำนวน 3 ข้อ (ทั้งหมด หลอก + จริง มี 4 ข้อ) โดยมาจากการคำนวนที่ผิดพลาด`;
+7. เพิ่มเติม: ${additionalRequirements}
+
+หมายเหตุ: โจทย์ที่สร้างต้องครอบคลุมทุกระดับ bloom taxonomy ที่กำหนด (${bloomStr}) ในคำถามเดียว`;
 
     return prompt;
 }
 
-// Call RunPod API
-async function callRunpodApi(userPrompt: string, systemPrompt: string = SYSTEM_PROMPT): Promise<string | null> {
-    try {
-        const data = {
-            input: {
-                prompt: `${systemPrompt}\n\nUser: ${userPrompt}\nAssistant:`,
-                sampling_params: { max_tokens: 9216 }
-            }
-        };
-
-        console.log(`System prompt : ${systemPrompt}`);
-        console.log(`User prompt : ${userPrompt}`);
-
-        const response = await axios.post(`${RUNPOD_URL}/runsync`, data, { headers: HEADERS });
-        
-        if (response.status === 200) {
-            console.log('RunPod response:', response.data);
-            return response.data?.id || null;
-        }
-        return null;
-    } catch (error) {
-        console.error('Error calling RunPod API:', error);
-        return null;
-    }
-}
-
-// Poll RunPod result
-async function pollRunpodResult(runId: string, pollInterval: number = 2, timeout: number = 180): Promise<any | null> {
-    const url = `${RUNPOD_URL}/status/${runId}`;
-    const start = Date.now();
-
-    while (true) {
+// Call RunPod API with better error handling and circuit breaker pattern
+async function callRunpodApi(userPrompt: string, systemPrompt: string = SYSTEM_PROMPT, retries: number = 2): Promise<string | null> {
+    let lastError: any = null;
+    
+    for (let attempt = 0; attempt <= retries; attempt++) {
         try {
-            const response = await axios.post(url, {}, { headers: HEADERS });
-
-            if (response.status === 200) {
-                const result = response.data;
-                const status = result?.status;
-                
-                if (status === "COMPLETED") {
-                    console.log('RunPod result:', result);
-                    return result;
+            const data = {
+                input: {
+                    prompt: `${systemPrompt}\n\nUser: ${userPrompt}\nAssistant:`,
+                    sampling_params: { max_tokens: 9216 }
                 }
-                if (status === "FAILED" || status === "CANCELLED") {
-                    return null;
-                }
-            }
+            };
 
-            if (Date.now() - start > timeout * 1000) {
-                return null;
-            }
+            console.log(`API attempt ${attempt + 1}/${retries + 1}: System prompt length: ${systemPrompt.length} chars`);
 
-            await new Promise(resolve => setTimeout(resolve, pollInterval * 1000));
-        } catch (error) {
-            console.error('Error polling RunPod result:', error);
-            return null;
+            const response = await axios.post(`${RUNPOD_URL}/runsync`, data, { 
+                headers: HEADERS,
+                timeout: 420000 // Increased to 7 minutes
+            });
+            
+            if (response.status === 200 && response.data?.id) {
+                console.log(`✅ RunPod API call successful (attempt ${attempt + 1}), run ID: ${response.data.id}`);
+                return response.data.id;
+            }
+            
+            console.warn(`⚠️ RunPod API returned status ${response.status} on attempt ${attempt + 1}`);
+            lastError = new Error(`API returned status ${response.status}`);
+        } catch (error: any) {
+            lastError = error;
+            console.error(`❌ RunPod API error on attempt ${attempt + 1}:`, error.message);
+            
+            // Don't retry on authentication errors
+            if (error.response?.status === 401 || error.response?.status === 403) {
+                break;
+            }
+            
+            // Wait before retry (exponential backoff)
+            if (attempt < retries) {
+                const waitTime = Math.min(1000 * Math.pow(2, attempt), 10000);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
         }
     }
+    
+    console.error(`❌ All RunPod API attempts failed:`, lastError?.message);
+    return null;
 }
 
 // Extract content and remove thinking
@@ -143,12 +152,11 @@ function extractContent(outputStr: string | RunpodOutput): string {
     
     // Handle the case where outputStr is from the API response structure
     if (typeof outputStr === 'object' && outputStr !== null) {
-        // If it's the full API response, extract the tokens
         const apiResponse = outputStr as RunpodOutput;
         if (apiResponse.choices && apiResponse.choices[0] && apiResponse.choices[0].tokens) {
             const tokens = apiResponse.choices[0].tokens;
             if (Array.isArray(tokens) && tokens.length > 0) {
-                content = tokens[0]; // Get the first token which contains the response
+                content = tokens[0];
             }
         }
     } else if (typeof outputStr === 'string') {
@@ -165,9 +173,7 @@ function extractContent(outputStr: string | RunpodOutput): string {
         if (questionsEnd > questionsStart) {
             content = content.substring(questionsStart, questionsEnd);
         } else {
-            // If no closing tag, take from <questions> to end
             content = content.substring(questionsStart);
-            // Add closing tag if missing
             if (!content.includes("</questions>")) {
                 content += "</questions>";
             }
@@ -178,48 +184,50 @@ function extractContent(outputStr: string | RunpodOutput): string {
     return content;
 }
 
-// Parse XML to JSON
-function parseXmlToJson(xmlContent: string): any {
+// Parse XML to JSON with better error handling
+function parseXmlToJson(xmlContent: string): QuestionData | null {
     try {
-        console.log('Parsing XML content:', xmlContent);
-        // Simple XML parsing for the specific structure
+        console.log('Parsing XML content length:', xmlContent.length);
+        
         const questionMatch = xmlContent.match(/<question>([\s\S]*?)<\/question>/);
-        if (!questionMatch) return null;
+        if (!questionMatch) {
+            console.error('No question tag found in XML');
+            return null;
+        }
 
         const questionContent = questionMatch[1];
         
-        // Extract fields
+        // Extract fields with better defaults
         const text = questionContent.match(/<text>([\s\S]*?)<\/text>/)?.[1]?.trim() || "";
         const type = questionContent.match(/<type>([\s\S]*?)<\/type>/)?.[1]?.trim() || "multiple_choice";
         
         // Extract options
         const optionsMatch = questionContent.match(/<options>([\s\S]*?)<\/options>/);
         const options: string[] = [];
-        let correctOptionIndex = -1;
         
         if (optionsMatch) {
             const optionMatches = optionsMatch[1].match(/<option>([\s\S]*?)<\/option>/g);
             if (optionMatches) {
                 optionMatches.forEach(match => {
                     const option = match.replace(/<\/?option>/g, '').trim();
-                    options.push(option);
+                    if (option) options.push(option);
                 });
             }
         }
         
         const correctAnswer = questionContent.match(/<correct_answer>([\s\S]*?)<\/correct_answer>/)?.[1]?.trim() || "";
+        let correctOptionIndex = -1;
         if (correctAnswer && options.length > 0) {
             correctOptionIndex = options.findIndex(opt => opt === correctAnswer);
         }
         
         let explanation = questionContent.match(/<explanation>([\s\S]*?)<\/explanation>/)?.[1]?.trim() || "";
-        // Only replace <br> and <br /> tags if they exist, otherwise leave explanation as is
         if (explanation.includes('<br>') || explanation.includes('<br />') || explanation.includes('<br/>')) {
             explanation = explanation.replace(/<br\s*\/?>/g, '\n');
         }
         
         const score = parseInt(questionContent.match(/<score>([\s\S]*?)<\/score>/)?.[1]?.trim() || "2");
-        const difficulty = questionContent.match(/<difficulty>([\s\S]*?)<\/difficulty>/)?.[1]?.trim() || "medium";
+        const difficulty = questionContent.match(/<difficulty>([\s\S]*?)<\/difficulty>/)?.[1]?.trim() || "ปานกลาง";
         
         // Extract bloom levels
         const bloomLevelsMatch = questionContent.match(/<bloom_levels>([\s\S]*?)<\/bloom_levels>/);
@@ -231,7 +239,14 @@ function parseXmlToJson(xmlContent: string): any {
             }
         }
 
+        // Validate required fields
+        if (!text || options.length === 0 || !correctAnswer || correctOptionIndex === -1) {
+            console.error('Invalid question data:', { text: !!text, optionsCount: options.length, correctAnswer: !!correctAnswer, correctOptionIndex });
+            return null;
+        }
+
         return {
+            id: 0, // Will be set later
             question: text,
             question_type: type,
             options: options,
@@ -242,89 +257,372 @@ function parseXmlToJson(xmlContent: string): any {
             difficulty: difficulty,
             bloom_level: bloomLevel
         };
-    } catch (error) {
-        console.error('Error parsing XML to JSON:', error);
+    } catch (error: any) {
+        console.error('Error parsing XML to JSON:', error.message);
         return null;
     }
 }
 
-// Updated generateQuestions function with proper result processing
+// Improved polling function with better timeout handling
+async function pollRunpodResult(runId: string, timeout: number = 180): Promise<any | null> {
+    const url = `${RUNPOD_URL}/status/${runId}`;
+    const start = Date.now();
+    let attemptCount = 0;
+    let pollInterval = 3; // Start with 3 seconds
+    
+    console.log(`🔍 Starting to poll result for run ID: ${runId}`);
+    
+    while (true) {
+        attemptCount++;
+        try {
+            const response = await axios.post(url, {}, { 
+                headers: HEADERS,
+                timeout: 600000
+            });
+
+            if (response.status === 200) {
+                const result = response.data;
+                const status = result?.status;
+                
+                console.log(`Poll attempt ${attemptCount} for ${runId}: ${status}`);
+                
+                if (status === "COMPLETED") {
+                    console.log(`✅ Run ${runId} completed successfully after ${attemptCount} attempts`);
+                    return result;
+                }
+                if (status === "FAILED" || status === "CANCELLED") {
+                    console.error(`❌ Run ${runId} failed with status: ${status}`);
+                    return null;
+                }
+                
+                // Log progress for IN_QUEUE and IN_PROGRESS
+                if (status === "IN_QUEUE" && attemptCount % 5 === 0) {
+                    console.log(`⏳ Run ${runId} still in queue after ${attemptCount} attempts`);
+                }
+                if (status === "IN_PROGRESS" && attemptCount % 3 === 0) {
+                    console.log(`⚙️ Run ${runId} processing... (${attemptCount} polls)`);
+                }
+            }
+
+            // Check timeout
+            const elapsed = Date.now() - start;
+            if (elapsed > timeout * 1000) {
+                console.error(`⏰ Timeout reached for run ID: ${runId} after ${elapsed/1000}s (${attemptCount} attempts)`);
+                return null;
+            }
+
+            // Adaptive polling interval
+            if (attemptCount <= 5) pollInterval = 3;        // First 5 attempts: 3s
+            else if (attemptCount <= 15) pollInterval = 5;  // Next 10 attempts: 5s
+            else pollInterval = 8;                          // After that: 8s
+            
+            await new Promise(resolve => setTimeout(resolve, pollInterval * 1000));
+            
+        } catch (error: any) {
+            console.error(`❌ Error polling run ID ${runId} (attempt ${attemptCount}):`, error.message);
+            
+            // Check overall timeout
+            if (Date.now() - start > timeout * 1000) {
+                console.error(`⏰ Overall timeout reached for run ID: ${runId} after ${attemptCount} attempts`);
+                return null;
+            }
+            
+            // Wait longer on error
+            await new Promise(resolve => setTimeout(resolve, 8000));
+        }
+    }
+}
+
+// Modified generateQuestions function with updated task generation logic
 async function generateQuestions(
     subject: string, 
     level: string, 
     bloomTaxonomy: string, 
+    difficultyLevels: string,
     type: string, 
     totalQuestions: number, 
     content?: string
 ): Promise<any> {
     try {
-        const bloomLevels = bloomTaxonomy.split(',').map(b => b.trim());
-        const maxWorkers = 3; // Use only 3 workers
-        const questions: any[] = [];
+        const bloomLevels = bloomTaxonomy.split(',').map(b => b.trim()).filter(b => b);
+        const difficulties = difficultyLevels.split(',').map(d => d.trim()).filter(d => d);
         
-        // Distribute questions across workers
-        const batches = [];
-        for (let i = 0; i < totalQuestions; i += maxWorkers) {
-            const batchSize = Math.min(maxWorkers, totalQuestions - i);
-            batches.push(batchSize);
+        if (bloomLevels.length === 0 || difficulties.length === 0) {
+            return {
+                type: "error",
+                title: "ข้อมูลไม่ถูกต้อง",
+                message: "กรุณาระบุระดับความยากและระดับขั้นโจทย์"
+            };
+        }
+
+        // Improved concurrency management - utilize all available workers
+        const MAX_WORKERS = 10; // Based on your RunPod setup
+        const maxConcurrency = Math.min(MAX_WORKERS, totalQuestions);
+        
+        // Calculate optimal batch size to distribute work evenly
+        const optimalBatchSize = Math.min(
+            Math.ceil(totalQuestions / Math.ceil(totalQuestions / maxConcurrency)),
+            maxConcurrency
+        );
+        
+        const questions: QuestionData[] = [];
+        let questionId = 1;
+        let totalAttempts = 0;
+        const maxAttempts = totalQuestions * 3;
+        
+        console.log(`🚀 Starting generation: ${totalQuestions} questions with ${maxConcurrency} workers, batch size: ${optimalBatchSize}`);
+        console.log(`📊 Difficulties: [${difficulties.join(', ')}], All Bloom levels per question: [${bloomLevels.join(', ')}]`);
+        
+        // Track failed attempts per difficulty (bloom levels are now used together)
+        const failureTracker = new Map<string, number>();
+        
+        // Create a queue of all question generation tasks
+        // Modified: Each task now uses ALL bloom levels instead of cycling through them
+        const taskQueue: Array<{
+            difficulty: string;
+            bloomLevels: string[]; // Changed from bloomLevel to bloomLevels array
+            taskId: number;
+        }> = [];
+        
+        // Pre-populate task queue with balanced distribution of difficulties only
+        // Each question will use ALL selected bloom levels
+        for (let i = 0; i < totalQuestions; i++) {
+            const selectedDifficulty = difficulties[i % difficulties.length];
+            taskQueue.push({
+                difficulty: selectedDifficulty,
+                bloomLevels: bloomLevels, // Use ALL bloom levels for each question
+                taskId: i + 1
+            });
         }
         
-        let questionId = 1;
+        // Shuffle task queue for better distribution
+        for (let i = taskQueue.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [taskQueue[i], taskQueue[j]] = [taskQueue[j], taskQueue[i]];
+        }
         
-        // Process each batch
-        for (const batchSize of batches) {
-            const promises = [];
+        while (questions.length < totalQuestions && totalAttempts < maxAttempts && taskQueue.length > 0) {
+            const remainingQuestions = totalQuestions - questions.length;
+            const currentBatchSize = Math.min(optimalBatchSize, remainingQuestions, taskQueue.length);
             
-            // Send requests to workers
-            for (let j = 0; j < batchSize; j++) {
+            console.log(`📦 Batch ${Math.floor(totalAttempts / optimalBatchSize) + 1}: Processing ${currentBatchSize} tasks (${questions.length}/${totalQuestions} completed, ${taskQueue.length} in queue)`);
+            
+            // Take tasks from the front of the queue
+            const currentBatch = taskQueue.splice(0, currentBatchSize);
+            
+            // Filter out tasks that have failed too many times
+            // Modified: Use difficulty as key since bloom levels are now combined
+            const validTasks = currentBatch.filter(task => {
+                const combinationKey = task.difficulty; // Only difficulty as key
+                const failures = failureTracker.get(combinationKey) || 0;
+                
+                if (failures >= 3) {
+                    console.warn(`⚠️ Skipping task ${task.taskId} (${combinationKey}) due to repeated failures`);
+                    return false;
+                }
+                return true;
+            });
+            
+            if (validTasks.length === 0) {
+                console.warn('⚠️ No valid tasks in this batch, trying next batch');
+                continue;
+            }
+            
+            // Create API call promises with staggered execution to distribute load
+            const apiPromises = validTasks.map((task, workerIndex) => {
                 const userPrompt = createUserPrompt(
                     subject, 
                     level || "ไม่ระบุ", 
                     type, 
-                    "ปานกลาง", 
-                    bloomLevels,
+                    task.difficulty,
+                    task.bloomLevels, // Pass ALL bloom levels
                     content || ADDITIONAL_REQUIREMENTS
                 );
                 
-                promises.push(callRunpodApi(userPrompt));
+                // Stagger API calls by 200ms intervals to reduce server load
+                return new Promise<{runId: string | null, metadata: any}>(resolve => {
+                    setTimeout(async () => {
+                        console.log(`🔄 Worker ${workerIndex + 1} starting task ${task.taskId} (${task.difficulty}, all blooms: ${task.bloomLevels.join(',')})`);
+                        const runId = await callRunpodApi(userPrompt);
+                        resolve({
+                            runId,
+                            metadata: {
+                                difficulty: task.difficulty,
+                                bloomLevels: task.bloomLevels, // Changed from bloomLevel to bloomLevels
+                                taskId: task.taskId,
+                                workerIndex: workerIndex + 1
+                            }
+                        });
+                    }, workerIndex * 200); // Stagger by 200ms
+                });
+            });
+            
+            // Execute all API calls in parallel
+            const apiResults = await Promise.allSettled(apiPromises);
+            
+            // Collect valid run IDs
+            const validRunTasks = apiResults
+                .map((result, index) => {
+                    if (result.status === 'fulfilled' && result.value.runId !== null) {
+                        return {
+                            runId: result.value.runId,
+                            metadata: result.value.metadata
+                        };
+                    }
+                    // Re-queue failed API tasks
+                    const failedTask = validTasks[index];
+                    const combinationKey = failedTask.difficulty; // Modified key
+                    failureTracker.set(combinationKey, (failureTracker.get(combinationKey) || 0) + 1);
+                    
+                    // Add back to queue if not failed too many times
+                    if ((failureTracker.get(combinationKey) || 0) < 3) {
+                        taskQueue.push(failedTask);
+                    }
+                    return null;
+                })
+                .filter(task => task !== null);
+            
+            if (validRunTasks.length === 0) {
+                console.error('❌ No valid run IDs received from batch');
+                totalAttempts += currentBatchSize;
+                continue;
             }
             
-            // Wait for all requests to be submitted
-            const runIds = await Promise.all(promises);
+            console.log(`🔄 Received ${validRunTasks.length}/${currentBatchSize} valid run IDs from ${validRunTasks.length} workers, polling results...`);
             
-            // Poll for results
-            const pollPromises = runIds.map(runId => 
-                runId ? pollRunpodResult(runId) : Promise.resolve(null)
-            );
-            
-            const results = await Promise.all(pollPromises);
-            console.log("Results:", results);
-
-            // Process results
-            for (const result of results) {
-                if (result && result.output && Array.isArray(result.output) && result.output.length > 0) {
-                    // Extract the actual response from the API structure
-                    const apiResponse = result.output[0]; // First item in output array
-                    console.log('API Response:', apiResponse);
-                    
-                    const content = extractContent(apiResponse);
-                    console.log('Extracted content:', content);
-                    
-                    const questionData = parseXmlToJson(content);
-                    console.log('Parsed question data:', questionData);
-                    
-                    if (questionData) {
-                        questions.push({
-                            id: questionId++,
-                            ...questionData
+            // Poll results with distributed timing to avoid overwhelming the server
+            const pollPromises = validRunTasks.map((task, index) => {
+                return new Promise(resolve => {
+                    // Stagger polling start by 500ms intervals to reduce server load
+                    setTimeout(async () => {
+                        console.log(`🔍 Worker ${task.metadata.workerIndex} polling task ${task.metadata.taskId}...`);
+                        const result = await pollRunpodResult(task.runId);
+                        resolve({
+                            result,
+                            metadata: task.metadata,
+                            runId: task.runId
                         });
+                    }, index * 500);
+                });
+            });
+            
+            const pollResults = await Promise.allSettled(pollPromises);
+            
+            // Process results
+            let successCount = 0;
+            let failureCount = 0;
+            
+            for (const pollResult of pollResults) {
+                if (pollResult.status === 'fulfilled') {
+                    const { result, metadata, runId } = pollResult.value as any;
+                    const combinationKey = metadata.difficulty; // Modified key
+                    
+                    if (result && result.output) {
+                        try {
+                            if (Array.isArray(result.output) && result.output.length > 0) {
+                                const apiResponse = result.output[0];
+                                const content = extractContent(apiResponse);
+                                const questionData = parseXmlToJson(content);
+                                
+                                if (questionData) {
+                                    questionData.id = questionId++;
+                                    questionData.difficulty = metadata.difficulty;
+                                    // Store all bloom levels as a combined string
+                                    questionData.bloom_level = metadata.bloomLevels.join(', ');
+                                    
+                                    questions.push(questionData);
+                                    successCount++;
+                                    console.log(`✅ Worker ${metadata.workerIndex} completed task ${metadata.taskId}: question ${questionData.id} (${metadata.difficulty}, all blooms: ${metadata.bloomLevels.join(',')})`);
+                                } else {
+                                    console.warn(`❌ Worker ${metadata.workerIndex} failed to parse task ${metadata.taskId}`);
+                                    failureTracker.set(combinationKey, (failureTracker.get(combinationKey) || 0) + 1);
+                                    failureCount++;
+                                    
+                                    // Re-queue if not failed too many times
+                                    if ((failureTracker.get(combinationKey) || 0) < 3) {
+                                        taskQueue.push({
+                                            difficulty: metadata.difficulty,
+                                            bloomLevels: metadata.bloomLevels, // Changed from bloomLevel
+                                            taskId: metadata.taskId
+                                        });
+                                    }
+                                }
+                            } else {
+                                console.warn(`❌ Worker ${metadata.workerIndex} got invalid output structure for task ${metadata.taskId}`);
+                                failureTracker.set(combinationKey, (failureTracker.get(combinationKey) || 0) + 1);
+                                failureCount++;
+                                
+                                // Re-queue if not failed too many times
+                                if ((failureTracker.get(combinationKey) || 0) < 3) {
+                                    taskQueue.push({
+                                        difficulty: metadata.difficulty,
+                                        bloomLevels: metadata.bloomLevels, // Changed from bloomLevel
+                                        taskId: metadata.taskId
+                                    });
+                                }
+                            }
+                        } catch (error: any) {
+                            console.error(`❌ Worker ${metadata.workerIndex} error processing task ${metadata.taskId}:`, error.message);
+                            failureTracker.set(combinationKey, (failureTracker.get(combinationKey) || 0) + 1);
+                            failureCount++;
+                            
+                            // Re-queue if not failed too many times
+                            if ((failureTracker.get(combinationKey) || 0) < 3) {
+                                taskQueue.push({
+                                    difficulty: metadata.difficulty,
+                                    bloomLevels: metadata.bloomLevels, // Changed from bloomLevel
+                                    taskId: metadata.taskId
+                                });
+                            }
+                        }
+                    } else {
+                        console.warn(`❌ Worker ${metadata.workerIndex} got no result for task ${metadata.taskId}`);
+                        failureTracker.set(combinationKey, (failureTracker.get(combinationKey) || 0) + 1);
+                        failureCount++;
+                        
+                        // Re-queue if not failed too many times
+                        if ((failureTracker.get(combinationKey) || 0) < 3) {
+                            taskQueue.push({
+                                difficulty: metadata.difficulty,
+                                bloomLevels: metadata.bloomLevels, // Changed from bloomLevel
+                                taskId: metadata.taskId
+                            });
+                        }
                     }
                 }
             }
+            
+            console.log(`📈 Batch completed: ${successCount} success, ${failureCount} failed (${questions.length}/${totalQuestions} total, ${taskQueue.length} remaining in queue)`);
+            totalAttempts += currentBatchSize;
+            
+            // Add progressive delay between batches based on success rate
+            if (questions.length < totalQuestions && totalAttempts < maxAttempts) {
+                const batchNumber = Math.floor(totalAttempts / optimalBatchSize);
+                const successRate = successCount / (successCount + failureCount);
+                
+                // Reduce delay if success rate is high, increase if low
+                let delayMs = 2000; // Base delay
+                if (successRate > 0.8) {
+                    delayMs = 1000; // Faster if doing well
+                } else if (successRate < 0.5) {
+                    delayMs = 4000; // Slower if struggling
+                }
+                
+                delayMs = Math.min(delayMs + (batchNumber * 200), 6000); // Progressive increase with cap
+                
+                console.log(`⏳ Waiting ${delayMs}ms before next batch (success rate: ${(successRate * 100).toFixed(1)}%)...`);
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
         }
         
-        // Create fallback questions if needed
+        console.log(`🏁 Generation completed: ${questions.length}/${totalQuestions} questions generated after ${totalAttempts} attempts`);
+        
+        // Create fallback questions for any that failed
         while (questions.length < totalQuestions) {
+            const fallbackDifficulty = difficulties[Math.floor(Math.random() * difficulties.length)];
+            
+            console.log(`🔧 Creating fallback question ${questions.length + 1}/${totalQuestions}`);
+            
             questions.push({
                 id: questionId++,
                 question: `โจทย์ที่ ${questionId - 1}: กรุณาติดต่อผู้ดูแลระบบ (AI response error)`,
@@ -334,8 +632,8 @@ async function generateQuestions(
                 correct_option_index: 0,
                 explanation: "เกิดข้อผิดพลาดในการสร้างโจทย์ กรุณาลองใหม่",
                 score: 2,
-                difficulty: "medium",
-                bloom_level: "เข้าใจ"
+                difficulty: fallbackDifficulty,
+                bloom_level: bloomLevels.join(', ') // Use all bloom levels for fallback too
             });
         }
         
@@ -352,55 +650,64 @@ async function generateQuestions(
                 subject: subject,
                 type: type,
                 bloom_taxonomy: bloomTaxonomy,
+                difficulty_levels: difficultyLevels,
                 created_at: new Date().toISOString(),
-                total_score: totalScore
+                total_score: totalScore,
+                generation_stats: {
+                    workers_used: maxConcurrency,
+                    batch_size: optimalBatchSize,
+                    total_attempts: totalAttempts,
+                    success_rate: (questions.length / totalAttempts * 100).toFixed(1) + '%'
+                }
             },
             questions: randomizedQuestions
         };
         
         return questionsData;
     } catch (error: any) {
-        console.error("Error generating questions:", error.message);
+        console.error("❌ Error generating questions:", error.message);
         return {
             title: "เกิดข้อผิดพลาด",
-            message: "ไม่สามารถเชื่อมต่อกับระบบสร้างโจทย์ได้",
+            message: `ไม่สามารถสร้างโจทย์ได้: ${error.message}`,
             type: "error"
         };
     }
 }
 
-// Create homework
+// Updated createHomework function
 async function createHomework(prevState: any, formData: FormData): Promise<any> {
     try {
         const supabase = await createSupabaseServerClient();
         const name = formData.get("h_name") as string;
         let subject = formData.get("h_subject") as string;
         const bloomtax = formData.get("h_bloomtax") as string;
+        const difficulty = formData.get("h_difficulty") as string;
         let type = formData.get("h_type") as string;
         const totalQuestions = formData.get("h_total_questions") as string;
         const level = formData.get("h_level") as string;
         const content = formData.get("h_content") as string;
 
         const bloomTaxonomies = bloomtax ? bloomtax.split(',').map(b => b.trim()).filter(b => b.length > 0) : [];
+        const difficultyLevels = difficulty ? difficulty.split(',').map(d => d.trim()).filter(d => d.length > 0) : [];
 
         if (!subject || !type) {
             subject = "พีชคณิต";
             type = "ปรนัย";
         }
 
-        if (!name || !subject || bloomTaxonomies.length === 0 || !type || !totalQuestions) {
+        if (!name || !subject || bloomTaxonomies.length === 0 || difficultyLevels.length === 0 || !type || !totalQuestions) {
             return {
                 title: "เกิดข้อผิดพลาด",
-                message: "กรุณากรอกข้อมูลให้ครบถ้วน",
+                message: "กรุณากรอกข้อมูลให้ครบถ้วน รวมถึงระดับความยาก",
                 type: "error",
             };
         }
 
         const totalQuestionsNumber = parseInt(totalQuestions);
-        if (isNaN(totalQuestionsNumber) || totalQuestionsNumber <= 0) {
+        if (isNaN(totalQuestionsNumber) || totalQuestionsNumber <= 0 || totalQuestionsNumber > 50) {
             return {
                 title: "เกิดข้อผิดพลาด",
-                message: "กรุณากรอกจำนวนข้อที่ถูกต้อง",
+                message: "จำนวนข้อต้องอยู่ระหว่าง 1-50 ข้อ",
                 type: "error",
             };
         }
@@ -419,7 +726,6 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
                             h_name: name,
                             h_temail: userData.t_email,
                             h_subject: subject,
-                            h_bloom_taxonomy: bloomTaxonomies.join(', '),
                             h_type: type,
                             h_score: Math.round(questionsData.metadata.total_score),
                             h_content: questionsData,
@@ -440,11 +746,13 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
             }
         }
 
-        // Generate questions with RunPod
+        // Generate questions
+        console.log(`🚀 Starting question generation: ${totalQuestionsNumber} questions`);
         const generatedQuestions = await generateQuestions(
             subject, 
             level || "ไม่ระบุ", 
             bloomTaxonomies.join(', '), 
+            difficultyLevels.join(', '),
             type, 
             totalQuestionsNumber, 
             content
@@ -454,7 +762,9 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
             return generatedQuestions;
         }
 
-        // Save to database
+        console.log(`💾 Saving homework to database...`);
+
+        // Save to database - use difficulty_levels from metadata
         const { error: homeworkError } = await supabase
             .from("homework")
             .insert({
@@ -470,6 +780,8 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
             .single();
             
         if (homeworkError) return { title: "เกิดข้อผิดพลาด", message: homeworkError.message, type: "error" };
+
+        console.log(`✅ Homework created and saved successfully`);
 
         return {
             title: "สำเร็จ",
@@ -501,6 +813,10 @@ async function updateHomework(homeworkId: number, questionsData: any): Promise<a
             .update({
                 h_content: questionsData,
                 h_score: Math.round(questionsData.metadata.total_score),
+                // Update difficulty using metadata
+                ...(questionsData.metadata.difficulty_levels && {
+                    h_difficulty: questionsData.metadata.difficulty_levels
+                })
             })
             .eq("h_id", homeworkId)
             .eq("h_temail", userData.t_email);
@@ -518,19 +834,19 @@ async function updateHomework(homeworkId: number, questionsData: any): Promise<a
     }
 }
 
-// // Get homework list
+// Get homework list
 async function getHomework() {
     try {
-        const supabase = await createSupabaseServerClient(); // Call Supabase
+        const supabase = await createSupabaseServerClient();
         const userData = await getUserData();
         if (!userData) return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลผู้ใช้", type: "error" };
 
-        // Get homework data
         const { data: homeworkData, error: homeworkError } = await supabase
             .from("homework")
             .select("*")
             .eq("h_temail", userData.t_email)
             .order("h_id", { ascending: false });
+            
         if (homeworkError) return { title: "เกิดข้อผิดพลาด", message: homeworkError.message, type: "error" };
 
         return homeworkData;
