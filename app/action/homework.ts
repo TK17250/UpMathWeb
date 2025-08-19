@@ -11,6 +11,35 @@ const HEADERS = {
     "Content-Type": "application/json",
     "Authorization": `Bearer ${process.env.RUNPOD_API_KEY}`
 };
+// Cache for frequently accessed data
+const cache = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getCachedData(key: string) {
+    const item = cache.get(key);
+    if (item && Date.now() - item.timestamp < CACHE_TTL) {
+        return item.data;
+    }
+    cache.delete(key);
+    return null;
+}
+
+function setCachedData(key: string, data: any) {
+    cache.set(key, { data, timestamp: Date.now() });
+}
+
+interface BatchTaskResult {
+    success: boolean;
+    task: {
+        difficulty: string;
+        bloomLevels: string[];
+        taskId: number;
+        retryCount: number;
+        priority: number;
+    };
+    questionData?: QuestionData;
+    error?: string;
+}
 
 const SYSTEM_PROMPT = fs.readFileSync(path.join(process.cwd(), 'system_prompt.txt'), 'utf8');
 
@@ -263,6 +292,82 @@ function parseXmlToJson(xmlContent: string): QuestionData | null {
     }
 }
 
+// Helper function to create fallback question
+function createFallbackQuestion(id: number, difficulty: string, bloomLevels: string[]) {
+    return {
+        id,
+        question: `โจทย์ที่ ${id}: กรุณาติดต่อผู้ดูแลระบบ (AI response error)`,
+        question_type: "multiple_choice",
+        options: ["ตัวเลือก 1", "ตัวเลือก 2", "ตัวเลือก 3", "ตัวเลือก 4"],
+        correct_answer: "ตัวเลือก 1",
+        correct_option_index: 0,
+        explanation: "เกิดข้อผิดพลาดในการสร้างโจทย์ กรุณาลองใหม่",
+        score: 2,
+        difficulty: difficulty,
+        bloom_level: bloomLevels.join(', ')
+    };
+}
+
+// Update the processBatchWithTimeout function signature and implementation
+async function processBatchWithTimeout(
+    tasks: Array<{
+        difficulty: string;
+        bloomLevels: string[];
+        taskId: number;
+        retryCount: number;
+        priority: number;
+    }>, 
+    subject: string, 
+    level: string, 
+    type: string, 
+    content?: string
+): Promise<BatchTaskResult[]> {
+    const BATCH_TIMEOUT = 10 * 60 * 1000; // 10 minutes per batch
+    
+    const batchPromise = Promise.all(
+        tasks.map(async (task, index): Promise<BatchTaskResult> => {
+            try {
+                // Stagger requests
+                await new Promise(resolve => setTimeout(resolve, index * 200));
+                
+                const userPrompt = createUserPrompt(
+                    subject, level, type, task.difficulty, task.bloomLevels, content
+                );
+                
+                const runId = await callRunpodApi(userPrompt);
+                if (!runId) {
+                    return { success: false, task, error: 'API call failed' };
+                }
+                
+                const result = await pollRunpodResult(runId, 300); // 5 minute timeout per request
+                if (!result || !result.output) {
+                    return { success: false, task, error: 'Polling failed' };
+                }
+                
+                const extractedContent = extractContent(result.output[0]);
+                const questionData = parseXmlToJson(extractedContent);
+                
+                if (!questionData) {
+                    return { success: false, task, error: 'Parsing failed' };
+                }
+                
+                return { success: true, task, questionData };
+                
+            } catch (error) {
+                return { success: false, task, error: 'Processing error' };
+            }
+        })
+    );
+    
+    const timeoutPromise = new Promise<BatchTaskResult[]>(resolve => {
+        setTimeout(() => {
+            resolve(tasks.map(task => ({ success: false, task, error: 'Batch timeout' })));
+        }, BATCH_TIMEOUT);
+    });
+    
+    return Promise.race([batchPromise, timeoutPromise]);
+}
+
 // Improved polling function with better timeout handling
 async function pollRunpodResult(runId: string, timeout: number = 600): Promise<any | null> {
     const url = `${RUNPOD_URL}/status/${runId}`;
@@ -333,7 +438,7 @@ async function pollRunpodResult(runId: string, timeout: number = 600): Promise<a
     }
 }
 
-// Improved parallel question generation with better worker distribution
+// Optimized generateQuestions with better worker management and circuit breaker
 async function generateQuestions(
     subject: string, 
     level: string, 
@@ -355,282 +460,129 @@ async function generateQuestions(
             };
         }
 
-        // Fixed: Better worker calculation and distribution
-        const MAX_WORKERS = 5; // Your RunPod setup
-        const OPTIMAL_CONCURRENT_REQUESTS = Math.min(5, totalQuestions); // Limit to 5 concurrent API calls
+        // Optimized worker configuration for better performance
+        const MAX_CONCURRENT_REQUESTS = Math.min(3, totalQuestions); // Reduced from 5 to 3 for stability
+        const MAX_RETRIES_PER_BATCH = 2; // Reduced retries
         
         const questions: QuestionData[] = [];
         let questionId = 1;
         let totalAttempts = 0;
-        const maxAttempts = totalQuestions * 4; // Increased retry limit
+        const maxAttempts = totalQuestions * 3; // Reduced from 4 to 3
         
-        console.log(`🚀 Starting generation: ${totalQuestions} questions with max ${OPTIMAL_CONCURRENT_REQUESTS} concurrent requests`);
-        console.log(`📊 Difficulties: [${difficulties.join(', ')}], All Bloom levels per question: [${bloomLevels.join(', ')}]`);
+        console.log(`🚀 Optimized generation: ${totalQuestions} questions with max ${MAX_CONCURRENT_REQUESTS} concurrent requests`);
         
-        // Track failed attempts per difficulty
-        const failureTracker = new Map<string, number>();
-        
-        // Create a queue of all question generation tasks
+        // Pre-generate task queue with better distribution
         const taskQueue: Array<{
             difficulty: string;
             bloomLevels: string[];
             taskId: number;
-            retryCount: number; // Track individual task retries
+            retryCount: number;
+            priority: number; // Add priority for better scheduling
         }> = [];
         
-        // Pre-populate task queue with balanced distribution
         for (let i = 0; i < totalQuestions; i++) {
             const selectedDifficulty = difficulties[i % difficulties.length];
             taskQueue.push({
                 difficulty: selectedDifficulty,
-                bloomLevels: bloomLevels, // Use ALL bloom levels for each question
+                bloomLevels: bloomLevels,
                 taskId: i + 1,
-                retryCount: 0
+                retryCount: 0,
+                priority: Math.random() // Random priority for better distribution
             });
         }
         
-        // Shuffle task queue for better distribution
-        for (let i = taskQueue.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [taskQueue[i], taskQueue[j]] = [taskQueue[j], taskQueue[i]];
-        }
+        // Sort by priority for better load balancing
+        taskQueue.sort((a, b) => b.priority - a.priority);
         
-        // Worker pool management
-        const activeWorkers = new Set<number>();
-        const maxRetryPerTask = 3;
+        const failureTracker = new Map<string, number>();
+        const MAX_GLOBAL_FAILURES = 3; // Reduced from 5
+        const MAX_TASK_RETRIES = 2; // Reduced from 3
         
+        // Main generation loop with circuit breaker
         while (questions.length < totalQuestions && totalAttempts < maxAttempts && taskQueue.length > 0) {
-            // Calculate how many tasks to process in this batch
             const remainingQuestions = totalQuestions - questions.length;
-            const availableWorkers = OPTIMAL_CONCURRENT_REQUESTS;
-            const tasksToProcess = Math.min(
-                availableWorkers,
-                remainingQuestions,
-                taskQueue.length
-            );
+            const batchSize = Math.min(MAX_CONCURRENT_REQUESTS, remainingQuestions, taskQueue.length);
             
-            console.log(`📦 Batch ${Math.floor(totalAttempts / OPTIMAL_CONCURRENT_REQUESTS) + 1}: Processing ${tasksToProcess} tasks (${questions.length}/${totalQuestions} completed, ${taskQueue.length} in queue)`);
+            console.log(`📦 Batch processing: ${batchSize} tasks (${questions.length}/${totalQuestions} completed)`);
             
-            // Take tasks from the front of the queue
-            const currentBatch = taskQueue.splice(0, tasksToProcess);
+            // Take tasks from queue with priority consideration
+            const currentBatch = taskQueue.splice(0, batchSize);
             
-            // Filter out tasks that have failed too many times
+            // Filter valid tasks with circuit breaker logic
             const validTasks = currentBatch.filter(task => {
-                const combinationKey = task.difficulty;
-                const globalFailures = failureTracker.get(combinationKey) || 0;
-                
-                if (globalFailures >= 5 || task.retryCount >= maxRetryPerTask) {
-                    console.warn(`⚠️ Skipping task ${task.taskId} (${combinationKey}) - Global failures: ${globalFailures}, Task retries: ${task.retryCount}`);
-                    return false;
-                }
-                return true;
+                const failures = failureTracker.get(task.difficulty) || 0;
+                return failures < MAX_GLOBAL_FAILURES && task.retryCount < MAX_TASK_RETRIES;
             });
             
             if (validTasks.length === 0) {
-                console.warn('⚠️ No valid tasks in this batch, trying next batch');
-                break; // Exit if no valid tasks remain
+                console.warn('⚠️ Circuit breaker activated - no valid tasks remaining');
+                break;
             }
             
-            // Create worker assignments
-            const workerTasks = validTasks.map((task, index) => {
-                const workerId = index + 1;
-                activeWorkers.add(workerId);
-                
-                const userPrompt = createUserPrompt(
-                    subject, 
-                    level || "ไม่ระบุ", 
-                    type, 
-                    task.difficulty,
-                    task.bloomLevels,
-                    content || ADDITIONAL_REQUIREMENTS
-                );
-                
-                return {
-                    workerId,
-                    task,
-                    userPrompt
-                };
-            });
+            // Process batch with staggered timing and better error handling
+            const batchResults = await processBatchWithTimeout(validTasks, subject, level, type, content);
             
-            console.log(`👥 Assigning ${workerTasks.length} tasks to workers: [${Array.from(activeWorkers).join(', ')}]`);
+            let batchSuccessCount = 0;
+            const failedTasks: any[] = [];
             
-            // Execute API calls with proper error handling
-            const apiResults = await Promise.allSettled(
-                workerTasks.map(async (workerTask, index) => {
-                    // Stagger API calls by 100ms to reduce server load
-                    await new Promise(resolve => setTimeout(resolve, index * 100));
-                    
-                    console.log(`🔄 Worker ${workerTask.workerId} starting task ${workerTask.task.taskId} (${workerTask.task.difficulty} ${workerTask.task.bloomLevels.join(', ')}, attempt ${workerTask.task.retryCount + 1})`);
-                    
-                    const runId = await callRunpodApi(workerTask.userPrompt);
-                    return {
-                        runId,
-                        workerId: workerTask.workerId,
-                        task: workerTask.task
-                    };
-                })
-            );
-            
-            // Collect valid run IDs and handle failed API calls
-            const validRunTasks: Array<{runId: string, workerId: number, task: any}> = [];
-            const failedTasks: Array<any> = [];
-            
-            apiResults.forEach((result, index) => {
-                const workerTask = workerTasks[index];
-                activeWorkers.delete(workerTask.workerId);
-                
-                if (result.status === 'fulfilled' && result.value.runId !== null) {
-                    validRunTasks.push({
-                        runId: result.value.runId,
-                        workerId: result.value.workerId,
-                        task: result.value.task
-                    });
+            // Process batch results
+            for (const result of batchResults) {
+                if (result.success && result.questionData) {
+                    result.questionData.id = questionId++;
+                    questions.push(result.questionData);
+                    batchSuccessCount++;
+                    console.log(`✅ Generated question ${result.questionData.id} (${result.task.difficulty})`);
                 } else {
-                    // Handle failed API call
-                    const failedTask = workerTask.task;
+                    // Handle failed task
+                    const failedTask = result.task;
                     failedTask.retryCount++;
+                    failedTask.priority = Math.random(); // Re-randomize priority
                     
-                    const combinationKey = failedTask.difficulty;
-                    failureTracker.set(combinationKey, (failureTracker.get(combinationKey) || 0) + 1);
+                    const failures = failureTracker.get(failedTask.difficulty) || 0;
+                    failureTracker.set(failedTask.difficulty, failures + 1);
                     
-                    // Re-queue if not exceeded retry limits
-                    if (failedTask.retryCount < maxRetryPerTask && (failureTracker.get(combinationKey) || 0) < 5) {
+                    // Re-queue if within limits
+                    if (failedTask.retryCount < MAX_TASK_RETRIES && failures < MAX_GLOBAL_FAILURES) {
                         failedTasks.push(failedTask);
                     }
                     
-                    console.warn(`❌ Worker ${workerTask.workerId} API call failed for task ${failedTask.taskId} (retry ${failedTask.retryCount}/${maxRetryPerTask})`);
-                }
-            });
-            
-            // Re-queue failed tasks
-            taskQueue.push(...failedTasks);
-            
-            if (validRunTasks.length === 0) {
-                console.error('❌ No valid run IDs received from batch');
-                totalAttempts += tasksToProcess;
-                continue;
-            }
-            
-            console.log(`🔄 Received ${validRunTasks.length}/${tasksToProcess} valid run IDs, polling results...`);
-            
-            // Poll results with staggered timing
-            const pollResults = await Promise.allSettled(
-                validRunTasks.map(async (runTask, index) => {
-                    // Stagger polling start by 300ms intervals
-                    await new Promise(resolve => setTimeout(resolve, index * 300));
-                    
-                    console.log(`🔍 Worker ${runTask.workerId} polling task ${runTask.task.taskId}...`);
-                    const result = await pollRunpodResult(runTask.runId, 600); // 10 minute timeout
-                    
-                    return {
-                        result,
-                        workerId: runTask.workerId,
-                        task: runTask.task,
-                        runId: runTask.runId
-                    };
-                })
-            );
-            
-            // Process results
-            let successCount = 0;
-            let failureCount = 0;
-            
-            for (const pollResult of pollResults) {
-                if (pollResult.status === 'fulfilled') {
-                    const { result, workerId, task, runId } = pollResult.value;
-                    const combinationKey = task.difficulty;
-                    
-                    if (result && result.output && Array.isArray(result.output) && result.output.length > 0) {
-                        try {
-                            const apiResponse = result.output[0];
-                            const extractedContent = extractContent(apiResponse);
-                            const questionData = parseXmlToJson(extractedContent);
-                            
-                            if (questionData) {
-                                questionData.id = questionId++;
-                                questionData.difficulty = task.difficulty;
-                                questionData.bloom_level = task.bloomLevels.join(', ');
-                                
-                                questions.push(questionData);
-                                successCount++;
-                                console.log(`✅ Worker ${workerId} completed task ${task.taskId}: question ${questionData.id} (${task.difficulty}, ${task.bloomLevels.join(', ')})`);
-                            } else {
-                                console.warn(`❌ Worker ${workerId} failed to parse task ${task.taskId}`);
-                                handleTaskFailure(task, combinationKey, failureTracker, taskQueue, maxRetryPerTask);
-                                failureCount++;
-                            }
-                        } catch (error: any) {
-                            console.error(`❌ Worker ${workerId} error processing task ${task.taskId}:`, error.message);
-                            handleTaskFailure(task, combinationKey, failureTracker, taskQueue, maxRetryPerTask);
-                            failureCount++;
-                        }
-                    } else {
-                        console.warn(`❌ Worker ${workerId} got invalid result for task ${task.taskId}`);
-                        handleTaskFailure(task, combinationKey, failureTracker, taskQueue, maxRetryPerTask);
-                        failureCount++;
-                    }
-                } else {
-                    console.error(`❌ Polling failed:`, pollResult.reason);
-                    failureCount++;
+                    console.warn(`❌ Task ${failedTask.taskId} failed (retry ${failedTask.retryCount}/${MAX_TASK_RETRIES})`);
                 }
             }
             
-            console.log(`📈 Batch completed: ${successCount} success, ${failureCount} failed (${questions.length}/${totalQuestions} total, ${taskQueue.length} remaining)`);
-            totalAttempts += tasksToProcess;
+            // Re-queue failed tasks with priority sorting
+            failedTasks.sort((a, b) => b.priority - a.priority);
+            taskQueue.unshift(...failedTasks);
             
-            // Dynamic delay based on success rate and server load
-            if (questions.length < totalQuestions && totalAttempts < maxAttempts && taskQueue.length > 0) {
-                const successRate = successCount / (successCount + failureCount);
-                const batchNumber = Math.floor(totalAttempts / OPTIMAL_CONCURRENT_REQUESTS);
-                
-                let delayMs = 1500; // Base delay
-                
-                // Adjust delay based on success rate
-                if (successRate > 0.8) {
-                    delayMs = 800; // Faster if doing well
-                } else if (successRate < 0.5) {
-                    delayMs = 3000; // Slower if struggling
-                } else if (successRate < 0.3) {
-                    delayMs = 5000; // Much slower if really struggling
-                }
-                
-                // Progressive increase with reasonable cap
-                delayMs = Math.min(delayMs + (batchNumber * 150), 8000);
-                
-                console.log(`⏳ Waiting ${delayMs}ms before next batch (success rate: ${(successRate * 100).toFixed(1)}%, active workers reset)...`);
+            totalAttempts += validTasks.length;
+            
+            // Adaptive delay with success rate consideration
+            const successRate = batchSuccessCount / validTasks.length;
+            let delayMs = 1000; // Base delay reduced from 1500
+            
+            if (successRate > 0.8) delayMs = 500;      // Faster if doing well
+            else if (successRate < 0.5) delayMs = 2000; // Slower if struggling
+            else if (successRate < 0.3) delayMs = 3000; // Much slower if really struggling
+            
+            if (questions.length < totalQuestions && taskQueue.length > 0) {
+                console.log(`⏳ Adaptive delay: ${delayMs}ms (success rate: ${(successRate * 100).toFixed(1)}%)`);
                 await new Promise(resolve => setTimeout(resolve, delayMs));
             }
         }
         
-        console.log(`🏁 Generation completed: ${questions.length}/${totalQuestions} questions generated after ${totalAttempts} attempts`);
+        console.log(`🏁 Generation completed: ${questions.length}/${totalQuestions} questions after ${totalAttempts} attempts`);
         
-        // Create fallback questions for any that failed
+        // Create minimal fallback questions if needed
         while (questions.length < totalQuestions) {
-            const fallbackDifficulty = difficulties[Math.floor(Math.random() * difficulties.length)];
-            
-            console.log(`🔧 Creating fallback question ${questions.length + 1}/${totalQuestions}`);
-            
-            questions.push({
-                id: questionId++,
-                question: `โจทย์ที่ ${questionId - 1}: กรุณาติดต่อผู้ดูแลระบบ (AI response error)`,
-                question_type: "multiple_choice",
-                options: ["ตัวเลือก 1", "ตัวเลือก 2", "ตัวเลือก 3", "ตัวเลือก 4"],
-                correct_answer: "ตัวเลือก 1",
-                correct_option_index: 0,
-                explanation: "เกิดข้อผิดพลาดในการสร้างโจทย์ กรุณาลองใหม่",
-                score: 2,
-                difficulty: fallbackDifficulty,
-                bloom_level: bloomLevels.join(', ')
-            });
+            const fallbackDifficulty = difficulties[questions.length % difficulties.length];
+            questions.push(createFallbackQuestion(questionId++, fallbackDifficulty, bloomLevels));
         }
         
-        // Randomize choices
+        // Randomize choices and calculate final stats
         const randomizedQuestions = randomizeChoices(questions.slice(0, totalQuestions));
-        
-        // Calculate total score
         const totalScore = randomizedQuestions.reduce((sum, q) => sum + (q.score || 2), 0);
         
-        const questionsData = {
+        return {
             metadata: {
                 total_questions: totalQuestions,
                 level: level,
@@ -641,18 +593,16 @@ async function generateQuestions(
                 created_at: new Date().toISOString(),
                 total_score: totalScore,
                 generation_stats: {
-                    max_concurrent_requests: OPTIMAL_CONCURRENT_REQUESTS,
+                    max_concurrent_requests: MAX_CONCURRENT_REQUESTS,
                     total_attempts: totalAttempts,
-                    success_rate: (questions.length / totalAttempts * 100).toFixed(1) + '%',
-                    fallback_questions: totalQuestions - (questions.filter(q => !q.question.includes('กรุณาติดต่อผู้ดูแลระบบ')).length)
+                    success_rate: (questions.filter(q => !q.question.includes('กรุณาติดต่อผู้ดูแลระบบ')).length / totalQuestions * 100).toFixed(1) + '%'
                 }
             },
             questions: randomizedQuestions
         };
         
-        return questionsData;
     } catch (error: any) {
-        console.error("❌ Error generating questions:", error.message);
+        console.error("❌ Optimized generation error:", error.message);
         return {
             title: "เกิดข้อผิดพลาด",
             message: `ไม่สามารถสร้างโจทย์ได้: ${error.message}`,
@@ -675,10 +625,12 @@ function handleTaskFailure(task: any, combinationKey: string, failureTracker: Ma
     }
 }
 
-// Updated createHomework function
+// Optimized createHomework function with better error handling and timeout
 async function createHomework(prevState: any, formData: FormData): Promise<any> {
     try {
         const supabase = await createSupabaseServerClient();
+        
+        // Extract form data efficiently
         const name = formData.get("h_name") as string;
         let subject = formData.get("h_subject") as string;
         const bloomtax = formData.get("h_bloomtax") as string;
@@ -688,14 +640,16 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
         const level = formData.get("h_level") as string;
         const content = formData.get("h_content") as string;
 
+        // Set defaults to prevent undefined issues
+        if (!subject || !type) {
+            subject = subject || "พีชคณิต";
+            type = type || "ปรนัย";
+        }
+
         const bloomTaxonomies = bloomtax ? bloomtax.split(',').map(b => b.trim()).filter(b => b.length > 0) : [];
         const difficultyLevels = difficulty ? difficulty.split(',').map(d => d.trim()).filter(d => d.length > 0) : [];
 
-        if (!subject || !type) {
-            subject = "พีชคณิต";
-            type = "ปรนัย";
-        }
-
+        // Validate required fields early
         if (!name || !subject || bloomTaxonomies.length === 0 || difficultyLevels.length === 0 || !type || !totalQuestions) {
             return {
                 title: "เกิดข้อผิดพลาด",
@@ -713,14 +667,26 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
             };
         }
 
-        const userData = await getUserData();
-        if (!userData) return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลผู้ใช้", type: "error" };
+        // Get user data with caching
+        const cacheKey = 'user_data';
+        let userData = getCachedData(cacheKey);
+        if (!userData) {
+            userData = await getUserData();
+            if (userData) {
+                setCachedData(cacheKey, userData);
+            }
+        }
+        
+        if (!userData) {
+            return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลผู้ใช้", type: "error" };
+        }
 
-        // Check if content is already processed questions data
+        // Check if content is pre-processed questions data (optimization for quick saves)
         if (content && content.trim()) {
             try {
                 const questionsData = JSON.parse(content);
                 if (questionsData.questions && questionsData.metadata) {
+                    // Direct save without regeneration
                     const { error: homeworkError } = await supabase
                         .from("homework")
                         .insert({
@@ -734,7 +700,9 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
                         .select()
                         .single();
                         
-                    if (homeworkError) return { title: "เกิดข้อผิดพลาด", message: homeworkError.message, type: "error" };
+                    if (homeworkError) {
+                        return { title: "เกิดข้อผิดพลาด", message: homeworkError.message, type: "error" };
+                    }
 
                     return {
                         title: "สำเร็จ",
@@ -744,12 +712,14 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
                 }
             } catch (e) {
                 // Content is not JSON, continue with generation
+                console.log("Content is not pre-processed JSON, proceeding with generation");
             }
         }
 
-        // Generate questions
-        console.log(`🚀 Starting question generation: ${totalQuestionsNumber} questions`);
-        const generatedQuestions = await generateQuestions(
+        // Generate questions with timeout and better error handling
+        console.log(`🚀 Starting optimized question generation: ${totalQuestionsNumber} questions`);
+        
+        const generationPromise = generateQuestions(
             subject, 
             level || "ไม่ระบุ", 
             bloomTaxonomies.join(', '), 
@@ -758,6 +728,13 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
             totalQuestionsNumber, 
             content
         );
+
+        // Add timeout to prevent hanging
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Generation timeout after 15 minutes')), 15 * 60 * 1000);
+        });
+
+        const generatedQuestions = await Promise.race([generationPromise, timeoutPromise]);
         
         if (generatedQuestions.type === "error") {
             return generatedQuestions;
@@ -765,7 +742,7 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
 
         console.log(`💾 Saving homework to database...`);
 
-        // Save to database - use difficulty_levels from metadata
+        // Save to database with optimized insert
         const { error: homeworkError } = await supabase
             .from("homework")
             .insert({
@@ -780,7 +757,9 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
             .select()
             .single();
             
-        if (homeworkError) return { title: "เกิดข้อผิดพลาด", message: homeworkError.message, type: "error" };
+        if (homeworkError) {
+            return { title: "เกิดข้อผิดพลาด", message: homeworkError.message, type: "error" };
+        }
 
         console.log(`✅ Homework created and saved successfully`);
 
@@ -791,8 +770,12 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
             questionsData: generatedQuestions,
         };
     } catch (error: any) {
-        console.error(`Server error: ${error.message}`);
-        return { title: "เกิดข้อผิดพลาดทางฝั่งเซิร์ฟเวอร์", message: "กรุณาลองใหม่ภายหลัง", type: "error" };
+        console.error(`Server error in createHomework: ${error.message}`);
+        return { 
+            title: "เกิดข้อผิดพลาดทางฝั่งเซิร์ฟเวอร์", 
+            message: error.message.includes('timeout') ? "การสร้างโจทย์ใช้เวลานานเกินไป กรุณาลองใหม่หรือลดจำนวนข้อ" : "กรุณาลองใหม่ภายหลัง", 
+            type: "error" 
+        };
     }
 }
 
@@ -835,24 +818,63 @@ async function updateHomework(homeworkId: number, questionsData: any): Promise<a
     }
 }
 
-// Get homework list
-async function getHomework() {
+// Optimized getHomework function with pagination and caching
+async function getHomework(page: number = 1, limit: number = 20) {
     try {
         const supabase = await createSupabaseServerClient();
-        const userData = await getUserData();
-        if (!userData) return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลผู้ใช้", type: "error" };
+        
+        // Use cached user data
+        const cacheKey = 'user_data';
+        let userData = getCachedData(cacheKey);
+        if (!userData) {
+            userData = await getUserData();
+            if (userData) {
+                setCachedData(cacheKey, userData);
+            }
+        }
+        
+        if (!userData) {
+            return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลผู้ใช้", type: "error" };
+        }
 
-        const { data: homeworkData, error: homeworkError } = await supabase
+        // Check cache for homework list
+        const homeworkCacheKey = `homework_${userData.t_email}_${page}_${limit}`;
+        const cachedHomework = getCachedData(homeworkCacheKey);
+        if (cachedHomework) {
+            console.log("Returning cached homework data");
+            return cachedHomework;
+        }
+
+        // Fetch with pagination for better performance
+        const startIndex = (page - 1) * limit;
+        
+        const { data: homeworkData, error: homeworkError, count } = await supabase
             .from("homework")
-            .select("*")
+            .select("*", { count: 'exact' })
             .eq("h_temail", userData.t_email)
-            .order("h_id", { ascending: false });
+            .order("h_id", { ascending: false })
+            .range(startIndex, startIndex + limit - 1);
             
-        if (homeworkError) return { title: "เกิดข้อผิดพลาด", message: homeworkError.message, type: "error" };
+        if (homeworkError) {
+            return { title: "เกิดข้อผิดพลาด", message: homeworkError.message, type: "error" };
+        }
 
-        return homeworkData;
+        const result = {
+            data: homeworkData || [],
+            pagination: {
+                page,
+                limit,
+                total: count || 0,
+                totalPages: Math.ceil((count || 0) / limit)
+            }
+        };
+
+        // Cache the result
+        setCachedData(homeworkCacheKey, result);
+
+        return result;
     } catch (error: any) {
-        console.log("Server error: ", error.message);
+        console.error("Server error in getHomework: ", error.message);
         return { title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์", message: error.message, type: "error" };
     }
 }
