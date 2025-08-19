@@ -91,8 +91,6 @@ export default function History() {
     }
   }, [user]);
 
-
-
   // Get student data
   useEffect(() => {
     if (activities.length > 0) {
@@ -110,101 +108,114 @@ export default function History() {
   }, [activities]);
 
   return (
-    <div className="overflow-hidden h-screen">
+    <div className="flex flex-col h-screen overflow-hidden">
       {user && (
-        <div className="h-full w-11/12 justify-center m-auto flex flex-col">
+        <div className="flex flex-col h-full w-11/12 justify-center m-auto">
           {/* Navbar */}
-          <Navbar />
+          <div className="flex-shrink-0">
+            <Navbar />
+          </div>
 
-          <div className="flex flex-col lg:flex-row h-full lg:h-auto">
+          <div className="flex flex-col lg:flex-row flex-1 min-h-0">
             {/* Sidebar */}
-            <Sidebar />
+            <div className="flex-shrink-0">
+              <Sidebar />
+            </div>
 
             {/* Content */}
-            <div className="bg-[#2D4A5B] mt-5 mb-5 lg:mb-0 rounded-xl w-full h-full lg:h-auto border-4 border-[#203D4F] p-5 overflow-y-auto">
+            <div className="bg-[#2D4A5B] mt-5 mb-5 lg:mb-0 rounded-xl flex-1 border-4 border-[#203D4F] flex flex-col min-h-0 overflow-hidden">
               
               {loading ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#80ED99]"></div>
                 </div>
               ) : (
-                <>
-                  {/* Activities List */}
-                  {activities.length > 0 ? (
-                    <div className="space-y-4">
-                      {activities.map((activity, index) => (
-                        <div key={index} className="bg-[#203D4F] rounded-xl p-6 border-4 border-[#2D4A5B] hover:border-[#80ED99] transition-all duration-300">
-                          <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center space-x-4">
-                              <div className="flex items-center space-x-2">
-                                <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                                <span className="text-white font-semibold text-lg">{activity.homework_name || `ชุดฝึก ${activity.a_id}`}</span>
-                              </div>
-                              <div className="text-sm text-white/60 bg-[#2D4A5B] px-3 py-1 rounded-full">
-                                {activity.class_name || `ห้องเรียน ${activity.a_cid}`}
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <div className="flex items-center space-x-2">
-                                <div className="px-3 py-1 rounded-full text-sm font-medium bg-green-500/20 text-green-400">
-                                  เสร็จสิ้น
+                <div className="flex flex-col h-full min-h-0">
+                  {/* Header (if you want to add a title later) */}
+                  <div className="flex-shrink-0 p-5 pb-0">
+                    {/* Optional header content can go here */}
+                  </div>
+
+                  {/* Scrollable Activities List */}
+                  <div className="flex-1 overflow-y-auto p-5">
+                    {activities.length > 0 ? (
+                      <div className="space-y-4 pb-4">
+                        {activities.map((activity, index) => (
+                          <div key={index} className="bg-[#203D4F] rounded-xl p-6 border-4 border-[#2D4A5B] hover:border-[#80ED99] transition-all duration-300">
+                            <div className="flex items-center justify-between mb-4">
+                              <div className="flex items-center space-x-4">
+                                <div className="flex items-center space-x-2">
+                                  <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                                  <span className="text-white font-semibold text-lg">{activity.homework_name || `ชุดฝึก ${activity.a_id}`}</span>
                                 </div>
-                                <button
-                                  onClick={() => {
-                                    setSelectedActivity({
-                                      id: activity.a_id,
-                                      name: activity.student_name || 'ไม่ระบุชื่อ'
-                                    });
-                                    setShowDetailModal(true);
-                                  }}
-                                  className="px-3 py-1 rounded-full text-sm font-medium bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors duration-200 cursor-pointer mr-2"
-                                >
-                                  ดูรายละเอียด
-                                </button>
-                                <button
-                                  onClick={() => router.push(`/history/${activity.a_id}`)}
-                                  className="px-3 py-1 rounded-full text-sm font-medium bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors duration-200 cursor-pointer"
-                                >
-                                  สถิติ
-                                </button>
+                                <div className="text-sm text-white/60 bg-[#2D4A5B] px-3 py-1 rounded-full">
+                                  {activity.class_name || `ห้องเรียน ${activity.a_cid}`}
+                                </div>
                               </div>
-                              <div className="text-xs text-white/60 mt-1">
-                                {formatDateTime(activity.h_time || activity.a_time).date}
+                              <div className="text-right">
+                                <div className="flex items-center space-x-2">
+                                  <div className="px-3 py-1 rounded-full text-sm font-medium bg-green-500/20 text-green-400">
+                                    เสร็จสิ้น
+                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      setSelectedActivity({
+                                        id: activity.a_id,
+                                        name: activity.student_name || 'ไม่ระบุชื่อ'
+                                      });
+                                      setShowDetailModal(true);
+                                    }}
+                                    className="px-3 py-1 rounded-full text-sm font-medium bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors duration-200 cursor-pointer mr-2"
+                                  >
+                                    ดูรายละเอียด
+                                  </button>
+                                  <button
+                                    onClick={() => router.push(`/history/${activity.a_id}`)}
+                                    className="px-3 py-1 rounded-full text-sm font-medium bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors duration-200 cursor-pointer"
+                                  >
+                                    สถิติ
+                                  </button>
+                                </div>
+                                <div className="text-xs text-white/60 mt-1">
+                                  {formatDateTime(activity.h_time || activity.a_time).date}
+                                </div>
+                                <div className="text-xs text-white/60">
+                                  {formatDateTime(activity.h_time || activity.a_time).time}
+                                </div>
                               </div>
-                              <div className="text-xs text-white/60">
-                                {formatDateTime(activity.h_time || activity.a_time).time}
+                            </div>
+                            
+                            <div className="text-sm text-white/80">
+                              <div className="flex items-center justify-between">
+                                <span>
+                                  <span className="text-white/60">นักเรียน: </span>
+                                  <span className="text-white font-medium">{activity.student_name || 'ไม่ระบุชื่อ'}</span>
+                                  <span className="text-white/60 ml-2">(@{activity.student_username || 'ไม่ระบุ username'})</span>
+                                </span>
+                                <span className="text-white/60">{activity.homework_subject || 'ไม่ระบุวิชา'}</span>
                               </div>
                             </div>
                           </div>
-                          
-                          <div className="text-sm text-white/80">
-                            <div className="flex items-center justify-between">
-                              <span>
-                                <span className="text-white/60">นักเรียน: </span>
-                                <span className="text-white font-medium">{activity.student_name || 'ไม่ระบุชื่อ'}</span>
-                                <span className="text-white/60 ml-2">(@{activity.student_username || 'ไม่ระบุ username'})</span>
-                              </span>
-                              <span className="text-white/60">{activity.homework_subject || 'ไม่ระบุวิชา'}</span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center h-full space-y-4">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-white/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <p className="text-white/60 text-lg font-medium">ยังไม่มีนักเรียนส่งการบ้านที่เสร็จสิ้น</p>
-                    </div>
-                  )}
-                </>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full space-y-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-white/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <p className="text-white/60 text-lg font-medium">ยังไม่มีนักเรียนส่งการบ้านที่เสร็จสิ้น</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           </div>
 
           {/* Footer */}
-          <Footer />
+          <div className="flex-shrink-0">
+            <Footer />
+          </div>
 
           {/* Student Detail Modal */}
           {selectedActivity && (
