@@ -238,20 +238,6 @@ export default function Homework() {
         }
     };
 
-    // Show loading state while checking authentication
-    if (!user && isLoading) {
-        return (
-            <div className="h-screen flex items-center justify-center">
-                <p className="text-white text-lg">กำลังตรวจสอบการเข้าสู่ระบบ...</p>
-            </div>
-        );
-    }
-
-    // Don't render anything if no user (will redirect)
-    if (!user) {
-        return null;
-    }
-
     return (
         <div className="h-screen flex flex-col overflow-hidden">
             <div className="flex flex-col h-full w-11/12 mx-auto">
