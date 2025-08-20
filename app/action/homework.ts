@@ -58,10 +58,53 @@ interface BatchTaskResult {
   error?: string;
 }
 
-const SYSTEM_PROMPT = fs.readFileSync(
-  path.join(process.cwd(), "system_prompt.txt"),
-  "utf8"
-);
+// Safe file reading with fallback
+function getSystemPrompt(): string {
+  try {
+    if (IS_VERCEL) {
+      // In production, use a fallback system prompt
+      return `You are an AI assistant that creates high-quality mathematics questions in Thai language. 
+
+Generate questions in the following XML format:
+<questions>
+<question>
+<text>[Question text in Thai]</text>
+<type>multiple_choice</type>
+<options>
+<option>[Option 1]</option>
+<option>[Option 2]</option>
+<option>[Option 3]</option>
+<option>[Option 4]</option>
+</options>
+<correct_answer>[Correct answer text]</correct_answer>
+<explanation>[Detailed explanation in Thai]</explanation>
+<score>2</score>
+<difficulty>[Easy/Medium/Hard in Thai]</difficulty>
+<bloom_levels>
+<level>[Bloom taxonomy level in Thai]</level>
+</bloom_levels>
+</question>
+</questions>
+
+Requirements:
+- Questions must be in Thai language
+- Multiple choice questions must have exactly 4 options
+- Include detailed explanations
+- Follow specified difficulty and Bloom taxonomy levels`;
+    } else {
+      // In development, try to read the file
+      return fs.readFileSync(
+        path.join(process.cwd(), "system_prompt.txt"),
+        "utf8"
+      );
+    }
+  } catch (error) {
+    console.warn("Failed to load system prompt file, using fallback");
+    return `You are an AI assistant that creates high-quality mathematics questions in Thai language. Generate questions in XML format with proper structure.`;
+  }
+}
+
+const SYSTEM_PROMPT = getSystemPrompt();
 
 const ADDITIONAL_REQUIREMENTS =
   "โจทย์จำเป็นต้องมีคำตอบ และถ้าโจทย์เป็นแบบ multiple choice (ปรนัย) ต้องมีคำตอบหลอกจำนวน 3 ข้อ (ทั้งหมด หลอก + จริง มี 4 ข้อ) โดยมาจากการคำนวนที่ผิดพลาด";
@@ -882,8 +925,18 @@ async function createHomeworkInternal(
       };
     }
 
-    // Get user data
-    const userData = await getUserData();
+    // Get user data with better error handling
+    let userData;
+    try {
+      userData = await getUserData();
+    } catch (error) {
+      console.error("Failed to get user data:", error);
+      return {
+        title: "เกิดข้อผิดพลาด",
+        message: "ไม่สามารถตรวจสอบข้อมูลผู้ใช้ได้",
+        type: "error",
+      };
+    }
 
     if (!userData) {
       return {
@@ -1023,14 +1076,37 @@ async function updateHomeworkInternal(
   questionsData: any
 ): Promise<any> {
   try {
+    // Validate input
+    if (!homeworkId || !questionsData) {
+      return {
+        title: "เกิดข้อผิดพลาด",
+        message: "ข้อมูลไม่ถูกต้อง",
+        type: "error",
+      };
+    }
+
     const supabase = await createSupabaseServerClient();
-    const userData = await getUserData();
-    if (!userData)
+    
+    // Get user data with better error handling
+    let userData;
+    try {
+      userData = await getUserData();
+    } catch (error) {
+      console.error("Failed to get user data:", error);
+      return {
+        title: "เกิดข้อผิดพลาด",
+        message: "ไม่สามารถตรวจสอบข้อมูลผู้ใช้ได้",
+        type: "error",
+      };
+    }
+
+    if (!userData) {
       return {
         title: "เกิดข้อผิดพลาด",
         message: "ไม่พบข้อมูลผู้ใช้",
         type: "error",
       };
+    }
 
     // Randomize choices before updating
     if (questionsData.questions && Array.isArray(questionsData.questions)) {
@@ -1042,21 +1118,22 @@ async function updateHomeworkInternal(
       .from("homework")
       .update({
         h_content: questionsData,
-        h_score: Math.round(questionsData.metadata.total_score),
+        h_score: Math.round(questionsData.metadata?.total_score || 0),
         // Update difficulty using metadata
-        ...(questionsData.metadata.difficulty_levels && {
+        ...(questionsData.metadata?.difficulty_levels && {
           h_difficulty: questionsData.metadata.difficulty_levels,
         }),
       })
       .eq("h_id", homeworkId)
       .eq("h_temail", userData.t_email);
 
-    if (updateError)
+    if (updateError) {
       return {
         title: "เกิดข้อผิดพลาด",
         message: updateError.message,
         type: "error",
       };
+    }
 
     // Clear cache after successful update
     clearHomeworkCache(userData.t_email);
@@ -1067,64 +1144,134 @@ async function updateHomeworkInternal(
       type: "success",
     };
   } catch (error: any) {
-    console.log("Server error: ", error.message);
+    console.error("Server error in updateHomework: ", error.message);
     return {
-      title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์",
+      title: "เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์",
       message: error.message,
       type: "error",
     };
   }
 }
 
-// FIXED: Return homework array directly, not wrapped in pagination object
+// FIXED: Better error handling for getHomework - main function causing the 500 error
 async function getHomeworkInternal() {
   try {
-    const supabase = await createSupabaseServerClient();
+    // Initialize Supabase client with error handling
+    let supabase;
+    try {
+      supabase = await createSupabaseServerClient();
+    } catch (supabaseError: any) {
+      console.error("Failed to create Supabase client:", supabaseError);
+      throw new Error("Database connection failed");
+    }
 
-    // Get user data fresh (don't cache user data for homework fetching)
-    const userData = await getUserData();
+    // Get user data with comprehensive error handling
+    let userData;
+    try {
+      userData = await getUserData();
+    } catch (userError: any) {
+      console.error("Failed to get user data:", userError);
+      // Return empty array instead of null to prevent UI crashes
+      return [];
+    }
 
     if (!userData) {
-      console.error("No user data found");
-      return null;
+      console.warn("No user data found, returning empty array");
+      return [];
     }
 
     console.log(`Fetching homework for user: ${userData.t_email}`);
 
-    // Don't use cache for now to ensure fresh data
-    const { data: homeworkData, error: homeworkError } = await supabase
-      .from("homework")
-      .select("*")
-      .eq("h_temail", userData.t_email)
-      .order("h_id", { ascending: false });
+    // Fetch homework with comprehensive error handling
+    let homeworkData;
+    try {
+      const { data, error: homeworkError } = await supabase
+        .from("homework")
+        .select("*")
+        .eq("h_temail", userData.t_email)
+        .order("h_id", { ascending: false });
 
-    if (homeworkError) {
-      console.error("Database error fetching homework:", homeworkError);
-      return null;
+      if (homeworkError) {
+        console.error("Database error fetching homework:", homeworkError);
+        // Return empty array instead of throwing to prevent crashes
+        return [];
+      }
+
+      homeworkData = data;
+    } catch (dbError: any) {
+      console.error("Database query failed:", dbError);
+      return [];
     }
 
     console.log(`Found ${homeworkData?.length || 0} homework records`);
 
-    // Return the data array directly (not wrapped in pagination object)
-    return homeworkData || [];
+    // Ensure we always return an array, even if empty
+    const result = homeworkData || [];
+    
+    // Validate each homework record to prevent rendering errors
+    const validatedHomework = result.filter((homework) => {
+      if (!homework || typeof homework !== 'object') {
+        console.warn("Invalid homework record found, skipping:", homework);
+        return false;
+      }
+      
+      // Ensure required fields exist
+      if (!homework.h_id || !homework.h_name) {
+        console.warn("Homework missing required fields, skipping:", homework.h_id);
+        return false;
+      }
+      
+      return true;
+    });
+
+    console.log(`Validated ${validatedHomework.length} homework records`);
+    return validatedHomework;
+
   } catch (error: any) {
-    console.error("Server error in getHomework: ", error.message);
-    return null;
+    console.error("Critical error in getHomework:", {
+      message: error.message,
+      stack: IS_DEVELOPMENT ? error.stack : undefined,
+      timestamp: new Date().toISOString(),
+    });
+    
+    // Always return empty array to prevent UI crashes
+    return [];
   }
 }
 
 // Get homework details form id
 async function getHomeworkDetails(homeworkId: number) {
   try {
-    const supabase = await createSupabaseServerClient();
-    const userData = await getUserData();
+    // Validate input
+    if (!homeworkId || isNaN(homeworkId)) {
+      return {
+        title: "เกิดข้อผิดพลาด",
+        message: "ข้อมูลไม่ถูกต้อง",
+        type: "error",
+      };
+    }
 
-    if (!userData)
+    const supabase = await createSupabaseServerClient();
+    
+    // Get user data with error handling
+    let userData;
+    try {
+      userData = await getUserData();
+    } catch (error) {
+      return {
+        title: "เกิดข้อผิดพลาด",
+        message: "ไม่สามารถตรวจสอบข้อมูลผู้ใช้ได้",
+        type: "error",
+      };
+    }
+
+    if (!userData) {
       return {
         title: "เกิดข้อผิดพลาด",
         message: "ไม่พบข้อมูลผู้ใช้",
         type: "error",
-      }; // Ensure user data is available
+      };
+    }
 
     // Fetch homework details
     const { data: homework, error: homeworkError } = await supabase
@@ -1163,9 +1310,9 @@ async function getHomeworkDetails(homeworkId: number) {
 
     return homeworkContent;
   } catch (error: any) {
-    console.log("Server error: ", error.message);
+    console.error("Server error in getHomeworkDetails: ", error.message);
     return {
-      title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์",
+      title: "เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์",
       message: error.message,
       type: "error",
     };
@@ -1179,13 +1326,26 @@ async function deleteHomework(
 ): Promise<any> {
   try {
     const supabase = await createSupabaseServerClient();
-    const userData = await getUserData();
-    if (!userData)
+    
+    // Get user data with error handling
+    let userData;
+    try {
+      userData = await getUserData();
+    } catch (error) {
+      return {
+        title: "เกิดข้อผิดพลาด",
+        message: "ไม่สามารถตรวจสอบข้อมูลผู้ใช้ได้",
+        type: "error",
+      };
+    }
+
+    if (!userData) {
       return {
         title: "เกิดข้อผิดพลาด",
         message: "ไม่พบข้อมูลผู้ใช้",
         type: "error",
       };
+    }
 
     const homeworkId = parseInt(formData.get("homeworkId") as string);
 
@@ -1198,43 +1358,48 @@ async function deleteHomework(
     }
 
     // First, check if homework is being used in actives table
-    const { data: actives, error: activesError } = await supabase
-      .from("actives")
-      .select("a_id, a_homework")
-      .or(`a_homework->>id.eq.${homeworkId}`);
+    try {
+      const { data: actives, error: activesError } = await supabase
+        .from("actives")
+        .select("a_id, a_homework")
+        .or(`a_homework->>id.eq.${homeworkId}`);
 
-    // If there's an error but it's because the table doesn't exist, continue
-    if (activesError && !activesError.message.includes("does not exist")) {
-      console.error("Error checking actives:", activesError);
-      return {
-        title: "เกิดข้อผิดพลาด",
-        message: "ไม่สามารถตรวจสอบสถานะการใช้งานได้",
-        type: "error",
-      };
-    }
+      // If there's an error but it's because the table doesn't exist, continue
+      if (activesError && !activesError.message.includes("does not exist")) {
+        console.error("Error checking actives:", activesError);
+        return {
+          title: "เกิดข้อผิดพลาด",
+          message: "ไม่สามารถตรวจสอบสถานะการใช้งานได้",
+          type: "error",
+        };
+      }
 
-    // Filter actives that actually contain this homework
-    const filteredActives =
-      actives?.filter((active) => {
-        if (typeof active.a_homework === "number") {
-          return active.a_homework === homeworkId;
-        } else if (
-          typeof active.a_homework === "object" &&
-          active.a_homework !== null
-        ) {
-          return (active.a_homework as any).id === homeworkId;
-        }
-        return false;
-      }) || [];
+      // Filter actives that actually contain this homework
+      const filteredActives =
+        actives?.filter((active) => {
+          if (typeof active.a_homework === "number") {
+            return active.a_homework === homeworkId;
+          } else if (
+            typeof active.a_homework === "object" &&
+            active.a_homework !== null
+          ) {
+            return (active.a_homework as any).id === homeworkId;
+          }
+          return false;
+        }) || [];
 
-    // If homework is being used, prevent deletion
-    if (filteredActives.length > 0) {
-      return {
-        title: "ไม่สามารถลบได้",
-        message:
-          "ชุดฝึกนี้กำลังถูกใช้งานในห้องเรียน กรุณาเอาออกจากห้องเรียนก่อนลบ",
-        type: "error",
-      };
+      // If homework is being used, prevent deletion
+      if (filteredActives.length > 0) {
+        return {
+          title: "ไม่สามารถลบได้",
+          message:
+            "ชุดฝึกนี้กำลังถูกใช้งานในห้องเรียน กรุณาเอาออกจากห้องเรียนก่อนลบ",
+          type: "error",
+        };
+      }
+    } catch (activesCheckError) {
+      console.warn("Could not check actives table, proceeding with deletion:", activesCheckError);
+      // Continue with deletion if actives check fails
     }
 
     // Check if homework exists and belongs to teacher
@@ -1245,12 +1410,13 @@ async function deleteHomework(
       .eq("h_temail", userData.t_email)
       .single();
 
-    if (fetchError)
+    if (fetchError) {
       return {
         title: "เกิดข้อผิดพลาด",
         message: "ไม่พบการบ้านที่ต้องการลบ",
         type: "error",
       };
+    }
 
     // Delete homework from database
     const { error: deleteError } = await supabase
@@ -1259,12 +1425,13 @@ async function deleteHomework(
       .eq("h_id", homeworkId)
       .eq("h_temail", userData.t_email);
 
-    if (deleteError)
+    if (deleteError) {
       return {
         title: "เกิดข้อผิดพลาด",
         message: deleteError.message,
         type: "error",
       };
+    }
 
     // Clear cache after successful deletion
     clearHomeworkCache(userData.t_email);
@@ -1275,9 +1442,9 @@ async function deleteHomework(
       type: "success",
     };
   } catch (error: any) {
-    console.log("Server error: ", error.message);
+    console.error("Server error in deleteHomework: ", error.message);
     return {
-      title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์",
+      title: "เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์",
       message: error.message,
       type: "error",
     };
@@ -1287,58 +1454,75 @@ async function deleteHomework(
 // Check if homework is being used in actives table
 async function checkHomeworkActive(homeworkId: number) {
   try {
+    // Validate input
+    if (!homeworkId || isNaN(homeworkId)) {
+      return { isActive: false, classNames: [] };
+    }
+
     const supabase = await createSupabaseServerClient();
-    const userData = await getUserData();
+    
+    // Get user data with error handling
+    let userData;
+    try {
+      userData = await getUserData();
+    } catch (error) {
+      return { isActive: false, classNames: [] };
+    }
 
     if (!userData) {
       return { isActive: false, classNames: [] };
     }
 
     // Check if homework is being used in actives table
-    const { data: actives, error: activesError } = await supabase
-      .from("actives")
-      .select(`*`)
-      .or(`a_homework->>id.eq.${homeworkId}`)
-      .eq("a_temail", userData.t_email);
+    try {
+      const { data: actives, error: activesError } = await supabase
+        .from("actives")
+        .select(`*`)
+        .or(`a_homework->>id.eq.${homeworkId}`)
+        .eq("a_temail", userData.t_email);
 
-    if (activesError) {
-      console.error("Error checking actives:", activesError);
-      // If table doesn't exist or other error, assume not active
+      if (activesError) {
+        console.error("Error checking actives:", activesError);
+        // If table doesn't exist or other error, assume not active
+        return { isActive: false, classNames: [] };
+      }
+
+      // Filter actives that actually contain this homework
+      const filteredActives =
+        actives?.filter((active) => {
+          if (typeof active.a_homework === "number") {
+            return active.a_homework === homeworkId;
+          } else if (
+            typeof active.a_homework === "object" &&
+            active.a_homework !== null
+          ) {
+            return (active.a_homework as any).id === homeworkId;
+          }
+          return false;
+        }) || [];
+
+      const isActive = filteredActives.length > 0;
+
+      // Get unique class names
+      const classNames = isActive
+        ? [
+            ...new Set(
+              filteredActives
+                .map((active) => (active as any)?.c_name)
+                .filter(Boolean)
+            ),
+          ]
+        : [];
+
+      return {
+        isActive,
+        classNames,
+        activeCount: filteredActives.length,
+      };
+    } catch (activesError) {
+      console.warn("Could not check actives table:", activesError);
       return { isActive: false, classNames: [] };
     }
-
-    // Filter actives that actually contain this homework
-    const filteredActives =
-      actives?.filter((active) => {
-        if (typeof active.a_homework === "number") {
-          return active.a_homework === homeworkId;
-        } else if (
-          typeof active.a_homework === "object" &&
-          active.a_homework !== null
-        ) {
-          return (active.a_homework as any).id === homeworkId;
-        }
-        return false;
-      }) || [];
-
-    const isActive = filteredActives.length > 0;
-
-    // Get unique class names
-    const classNames = isActive
-      ? [
-          ...new Set(
-            filteredActives
-              .map((active) => (active as any)?.c_name)
-              .filter(Boolean)
-          ),
-        ]
-      : [];
-
-    return {
-      isActive,
-      classNames,
-      activeCount: filteredActives.length,
-    };
   } catch (error) {
     console.error("Error in checkHomeworkActive:", error);
     return { isActive: false, classNames: [] };
