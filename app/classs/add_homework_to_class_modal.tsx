@@ -77,7 +77,7 @@ export default function AddHomeworkToClassModal({
                 setHomeworkList(result);
             } else if (isApiErrorResponse(result)) {
                 if (window.showAlert) {
-                    window.showAlert('เกิดข้อผิดพลาด', result, 'error');
+                    window.showAlert('เกิดข้อผิดพลาด', result.message, 'error');
                 }
             } else if (result === null) {
                 // Handle null case - could be no data or another error condition
