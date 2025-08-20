@@ -11,9 +11,10 @@ const HEADERS = {
     "Content-Type": "application/json",
     "Authorization": `Bearer ${process.env.RUNPOD_API_KEY}`
 };
+
 // Cache for frequently accessed data
 const cache = new Map();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 30 * 1000; // Reduced to 30 seconds for debugging
 
 function getCachedData(key: string) {
     const item = cache.get(key);
@@ -625,6 +626,17 @@ function handleTaskFailure(task: any, combinationKey: string, failureTracker: Ma
     }
 }
 
+// Clear homework cache helper function
+function clearHomeworkCache(userEmail: string) {
+    // Clear all cache entries that match homework pattern for this user
+    for (const [key, value] of cache.entries()) {
+        if (key.includes(`homework_${userEmail}`)) {
+            cache.delete(key);
+        }
+    }
+    console.log(`🧹 Cleared homework cache for user: ${userEmail}`);
+}
+
 // Optimized createHomework function with better error handling and timeout
 async function createHomework(prevState: any, formData: FormData): Promise<any> {
     try {
@@ -667,15 +679,8 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
             };
         }
 
-        // Get user data with caching
-        const cacheKey = 'user_data';
-        let userData = getCachedData(cacheKey);
-        if (!userData) {
-            userData = await getUserData();
-            if (userData) {
-                setCachedData(cacheKey, userData);
-            }
-        }
+        // Get user data
+        const userData = await getUserData();
         
         if (!userData) {
             return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลผู้ใช้", type: "error" };
@@ -703,6 +708,9 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
                     if (homeworkError) {
                         return { title: "เกิดข้อผิดพลาด", message: homeworkError.message, type: "error" };
                     }
+
+                    // Clear cache after successful creation
+                    clearHomeworkCache(userData.t_email);
 
                     return {
                         title: "สำเร็จ",
@@ -761,6 +769,9 @@ async function createHomework(prevState: any, formData: FormData): Promise<any> 
             return { title: "เกิดข้อผิดพลาด", message: homeworkError.message, type: "error" };
         }
 
+        // Clear cache after successful creation
+        clearHomeworkCache(userData.t_email);
+
         console.log(`✅ Homework created and saved successfully`);
 
         return {
@@ -807,6 +818,9 @@ async function updateHomework(homeworkId: number, questionsData: any): Promise<a
 
         if (updateError) return { title: "เกิดข้อผิดพลาด", message: updateError.message, type: "error" };
 
+        // Clear cache after successful update
+        clearHomeworkCache(userData.t_email);
+
         return {
             title: "สำเร็จ",
             message: "อัพเดตชุดฝึกเรียบร้อยแล้ว",
@@ -818,64 +832,41 @@ async function updateHomework(homeworkId: number, questionsData: any): Promise<a
     }
 }
 
-// Optimized getHomework function with pagination and caching
-async function getHomework(page: number = 1, limit: number = 20) {
+// FIXED: Return homework array directly, not wrapped in pagination object
+async function getHomework() {
     try {
         const supabase = await createSupabaseServerClient();
         
-        // Use cached user data
-        const cacheKey = 'user_data';
-        let userData = getCachedData(cacheKey);
-        if (!userData) {
-            userData = await getUserData();
-            if (userData) {
-                setCachedData(cacheKey, userData);
-            }
-        }
+        // Get user data fresh (don't cache user data for homework fetching)
+        const userData = await getUserData();
         
         if (!userData) {
-            return { title: "เกิดข้อผิดพลาด", message: "ไม่พบข้อมูลผู้ใช้", type: "error" };
+            console.error("No user data found");
+            return null;
         }
 
-        // Check cache for homework list
-        const homeworkCacheKey = `homework_${userData.t_email}_${page}_${limit}`;
-        const cachedHomework = getCachedData(homeworkCacheKey);
-        if (cachedHomework) {
-            console.log("Returning cached homework data");
-            return cachedHomework;
-        }
+        console.log(`Fetching homework for user: ${userData.t_email}`);
 
-        // Fetch with pagination for better performance
-        const startIndex = (page - 1) * limit;
-        
-        const { data: homeworkData, error: homeworkError, count } = await supabase
+        // Don't use cache for now to ensure fresh data
+        const { data: homeworkData, error: homeworkError } = await supabase
             .from("homework")
-            .select("*", { count: 'exact' })
+            .select("*")
             .eq("h_temail", userData.t_email)
-            .order("h_id", { ascending: false })
-            .range(startIndex, startIndex + limit - 1);
+            .order("h_id", { ascending: false });
             
         if (homeworkError) {
-            return { title: "เกิดข้อผิดพลาด", message: homeworkError.message, type: "error" };
+            console.error("Database error fetching homework:", homeworkError);
+            return null;
         }
 
-        const result = {
-            data: homeworkData || [],
-            pagination: {
-                page,
-                limit,
-                total: count || 0,
-                totalPages: Math.ceil((count || 0) / limit)
-            }
-        };
+        console.log(`Found ${homeworkData?.length || 0} homework records`);
 
-        // Cache the result
-        setCachedData(homeworkCacheKey, result);
+        // Return the data array directly (not wrapped in pagination object)
+        return homeworkData || [];
 
-        return result;
     } catch (error: any) {
         console.error("Server error in getHomework: ", error.message);
-        return { title: "เกิดข้อผิดพลาดฝั่งเซิฟเวอร์", message: error.message, type: "error" };
+        return null;
     }
 }
 
@@ -987,6 +978,9 @@ async function deleteHomework(prevState: any, formData: FormData): Promise<any> 
             .eq("h_temail", userData.t_email);
         
         if (deleteError) return { title: "เกิดข้อผิดพลาด", message: deleteError.message, type: "error" };
+
+        // Clear cache after successful deletion
+        clearHomeworkCache(userData.t_email);
 
         return { title: "สำเร็จ", message: `ลบชุดฝึก "${homework.h_name}" เรียบร้อยแล้ว`, type: "success" };
     } catch (error: any) {

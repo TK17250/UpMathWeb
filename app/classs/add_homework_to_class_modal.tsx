@@ -14,11 +14,39 @@ interface HomeworkData {
     h_content: any;
 }
 
+// Add proper type definitions for the API responses
+interface ApiErrorResponse {
+    type: 'error';
+    message: string;
+    title?: string;
+}
+
+interface ApiSuccessResponse {
+    type: 'success';
+    message: string;
+    title: string;
+}
+
+// Union type for getHomework return type
+type GetHomeworkResult = HomeworkData[] | ApiErrorResponse | null;
+
+// Union type for addHomeworkToClass return type  
+type AddHomeworkResult = ApiSuccessResponse | ApiErrorResponse;
+
 interface AddHomeworkToClassModalProps {
     isOpen: boolean;
     onClose: () => void;
     classId: number;
     onSuccess?: () => void;
+}
+
+// Type guard functions to help TypeScript understand the types
+function isApiErrorResponse(result: any): result is ApiErrorResponse {
+    return result && typeof result === 'object' && result.type === 'error';
+}
+
+function isHomeworkArray(result: any): result is HomeworkData[] {
+    return Array.isArray(result);
 }
 
 export default function AddHomeworkToClassModal({ 
@@ -43,12 +71,19 @@ export default function AddHomeworkToClassModal({
     const fetchHomeworkList = async () => {
         setLoadingHomework(true);
         try {
-            const result = await getHomework();
-            if (Array.isArray(result)) {
+            const result: GetHomeworkResult = await getHomework();
+            
+            if (isHomeworkArray(result)) {
                 setHomeworkList(result);
-            } else if (result?.type === 'error') {
+            } else if (isApiErrorResponse(result)) {
                 if (window.showAlert) {
-                    window.showAlert('เกิดข้อผิดพลาด', result.message, 'error');
+                    window.showAlert('เกิดข้อผิดพลาด', result, 'error');
+                }
+            } else if (result === null) {
+                // Handle null case - could be no data or another error condition
+                setHomeworkList([]);
+                if (window.showAlert) {
+                    window.showAlert('เกิดข้อผิดพลาด', 'ไม่สามารถโหลดรายการชุดฝึกได้', 'error');
                 }
             }
         } catch (error) {
@@ -79,7 +114,7 @@ export default function AddHomeworkToClassModal({
             formData.append('classId', classId.toString());
             formData.append('aiCheck', aiCheck.toString());
 
-            const result = await addHomeworkToClass(null, formData);
+            const result: AddHomeworkResult = await addHomeworkToClass(null, formData);
             
             if (result.type === 'success') {
                 if (window.showAlert) {
@@ -89,7 +124,7 @@ export default function AddHomeworkToClassModal({
                 handleClose();
             } else {
                 if (window.showAlert) {
-                    window.showAlert(result.title, result.message, result.type);
+                    window.showAlert(result.title || 'เกิดข้อผิดพลาด', result.message, result.type);
                 }
             }
         } catch (error) {

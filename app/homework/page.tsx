@@ -13,10 +13,11 @@ import { createHomework, getHomework, updateHomework } from "../action/homework"
 
 export default function Homework() {
     const [user, setUser] = useState<any>(null);
-    const [homeworkData, setHomeworkData] = useState<any>(null);
+    const [homeworkData, setHomeworkData] = useState<any[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isQuestionsModalOpen, setIsQuestionsModalOpen] = useState(false);
     const [selectedHomework, setSelectedHomework] = useState<any>(null);
+    const [isLoading, setIsLoading] = useState(true);
 
     // Swapy
     const swapy = useRef(null) as any;
@@ -33,13 +34,25 @@ export default function Homework() {
     };
 
     // Function to refresh homework data (can be called from modal)
-    const refreshHomeworkData = () => {
-        getHomework().then((res: any) => {
-            if (res) {
+    const refreshHomeworkData = async () => {
+        console.log("Refreshing homework data...");
+        setIsLoading(true);
+        try {
+            const res = await getHomework();
+            console.log("Homework data received:", res);
+            if (res && Array.isArray(res)) {
                 setHomeworkData(res);
+            } else {
+                console.warn("Invalid homework data format:", res);
+                setHomeworkData([]);
             }
-        });
-        setIsModalOpen(false); // Close modal after refresh
+        } catch (error) {
+            console.error("Error refreshing homework data:", error);
+            setHomeworkData([]);
+        } finally {
+            setIsLoading(false);
+            setIsModalOpen(false); // Close modal after refresh
+        }
     };
 
     // Check login
@@ -61,19 +74,35 @@ export default function Homework() {
         })
     }, [])
 
-    // Get homework data
+    // Get homework data - FIXED: Handle array response correctly
     useEffect(() => {
-        getHomework().then((res: any) => {
-            if (res) {
-                setHomeworkData(res);
+        const fetchHomework = async () => {
+            console.log("Initial homework fetch...");
+            setIsLoading(true);
+            try {
+                const res = await getHomework();
+                console.log("Initial homework data:", res);
+                if (res && Array.isArray(res)) {
+                    setHomeworkData(res);
+                } else {
+                    console.warn("No homework data or invalid format:", res);
+                    setHomeworkData([]);
+                }
+            } catch (error) {
+                console.error("Error fetching homework:", error);
+                setHomeworkData([]);
+            } finally {
+                setIsLoading(false);
             }
-        })
+        };
+
+        fetchHomework();
     }, []);
 
     // Initialize Swapy
     useEffect(() => {
         try {
-            if (container.current) {
+            if (container.current && homeworkData.length > 0) {
                 swapy.current = createSwapy(container.current)
     
                 swapy.current.onSwap(({ data, fromPosition, toPosition }: any) => {
@@ -103,7 +132,7 @@ export default function Homework() {
             
             if (result.type === 'success') {
                 // Update local state
-                setHomeworkData((prev: any) => 
+                setHomeworkData((prev: any[]) => 
                     prev.map((item: any) => 
                         item.h_id === selectedHomework.h_id 
                             ? { ...item, h_content: questionsData, h_score: questionsData.metadata.total_score }
@@ -155,12 +184,19 @@ export default function Homework() {
                                 onClick={() => setIsModalOpen(true)}>+ สร้างชุดฝึก</button>
                             </div>
 
+                            {/* Loading state */}
+                            {isLoading && (
+                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+                                    <p className="text-white text-lg">กำลังโหลด...</p>
+                                </div>
+                            )}
+
                             {/* Homework list */}
-                            {homeworkData && homeworkData.length > 0 ? (
+                            {!isLoading && homeworkData && homeworkData.length > 0 ? (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mt-5 relative" ref={container}>
                                     {homeworkData.map((item: any, index: number) => (
                                         <div
-                                            key={index}
+                                            key={item.h_id || index}
                                             data-swapy-slot={index}
                                             className="relative"
                                         >
@@ -190,12 +226,18 @@ export default function Homework() {
                                                                 <span className="text-gray-300 text-sm">{item.h_content.metadata.bloom_taxonomy}</span>
                                                             </div>
                                                         )}
+                                                        {item.h_subject && (
+                                                            <div className="">
+                                                                <span className="text-[#80ED99] text-sm font-semibold">วิชา: </span>
+                                                                <span className="text-gray-300 text-sm">{item.h_subject}</span>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                     <div className="mt-auto">
                                                         <div className="flex items-center justify-between">
                                                             <div className="text-xs">
                                                                 <p className="text-[#80ED99]">
-                                                                    คะแนนรวม: {item.h_score} คะแนน
+                                                                    คะแนนรวม: {item.h_score || 0} คะแนน
                                                                 </p>
                                                             </div>
                                                         </div>
@@ -205,11 +247,11 @@ export default function Homework() {
                                         </div>
                                     ))}
                                 </div>
-                            ) : (
+                            ) : !isLoading ? (
                                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
                                     <p className="text-white text-lg">ยังไม่มีชุดฝึก</p>
                                 </div>
-                            )}
+                            ) : null}
                         </div>
                     </div>
 
