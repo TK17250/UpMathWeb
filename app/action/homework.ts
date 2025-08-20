@@ -16,6 +16,7 @@ const HEADERS = {
   "Content-Type": "application/json",
   Authorization: `Bearer ${process.env.RUNPOD_API_KEY}`,
 };
+
 // Cache for frequently accessed data
 const cache = new Map();
 const CACHE_TTL = 30 * 1000; // Reduced to 30 seconds for debugging

@@ -435,16 +435,6 @@ export default function Homework() {
                     />
                 </div>
             )}
-            
-            {/* Loading overlay for initial page load */}
-            {!user && (
-                <div className="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white p-6 rounded-lg text-center">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
-                        <p>กำลังตรวจสอบการเข้าสู่ระบบ...</p>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

@@ -143,7 +143,7 @@ export default function Home() {
   // Loading state
   if (loading || !user) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#1a1a1a]">
+      <div className="h-screen flex items-center justify-center bg-[#1a1a1a] opacity-70">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-white mb-4"></div>
           <div className="text-white text-xl">กำลังโหลดข้อมูล...</div>
