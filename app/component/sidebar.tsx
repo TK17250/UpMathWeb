@@ -1,6 +1,7 @@
 'use client'; // Add this if not present
 import React, { useEffect, useState } from 'react';
 import { getUserData } from '../action/getuser';
+import Link from 'next/link';
 
 const Sidebar = () => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -101,7 +102,7 @@ const Sidebar = () => {
             >
                 <nav className="mt-5 px-2">
                     {menuItems.map((item) => (
-                        <a
+                        <Link
                             key={item.id}
                             href={`${item.id}`}
                             className={`flex items-center px-4 py-3 mt-1 rounded-xl text-sm ${activePage === item.id
@@ -113,7 +114,7 @@ const Sidebar = () => {
                                 <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
                             </svg>
                             <span>{item.text}</span>
-                        </a>
+                        </Link>
                     ))}
                 </nav>
 
@@ -157,7 +158,7 @@ const Sidebar = () => {
 
                 <nav className="mx-3 p-4 bg-[#203D4F] rounded-xl">
                     {menuItems.map((item) => (
-                        <a
+                        <Link
                             key={item.id}
                             href={`${item.id}`}
                             className={`flex items-center px-4 py-3 mt-1 rounded-xl text-sm ${activePage === item.id
@@ -169,7 +170,7 @@ const Sidebar = () => {
                                 <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
                             </svg>
                             <span>{item.text}</span>
-                        </a>
+                        </Link>
                     ))}
                 </nav>
 

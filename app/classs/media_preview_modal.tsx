@@ -6,6 +6,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTrash } from '@fortawesome/free-solid-svg-icons';
 import { getMedia, getMediaID } from '@/app/action/media';
 import { removeMediaFromClass } from '@/app/action/class';
+import Link from 'next/link';
 interface MediaData {
     m_id: number;
     m_name: string;
@@ -164,14 +165,14 @@ export default function MediaPreviewModal({
                         <p className="text-sm text-white/70 mb-2 text-center">
                             {extension.toUpperCase()} File
                         </p>
-                        <a
+                        <Link
                             href={signedUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="bg-[#80ED99] text-black px-4 py-2 rounded hover:bg-[#6bc47f] transition-colors"
                         >
                             Open File
-                        </a>
+                        </Link>
                     </div>
                 );
         }
