@@ -9,6 +9,7 @@ import 'katex/dist/katex.min.css';
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTrash } from "@fortawesome/free-solid-svg-icons";
 import { AlertType } from '../component/alert1';
+import { KaTeXGuideButton } from '../component/guide';
 
 // Extend Window interface to include showAlert
 declare global {
@@ -314,24 +315,31 @@ export default function QuestionsPreviewModal({
             >
                 {/* Header */}
                 <div className="lg:flex items-center justify-between p-6 border-b border-[#203D4F]">
-                    <div>
-                        <h2 className="text-2xl font-bold text-white">โจทย์ที่สร้างแล้ว</h2>
-                        <p className="text-gray-300 mt-1">
-                            {editableData.metadata.subject} - &nbsp;
-                            {editableData.metadata.level} | &nbsp;
-                            {editableData.metadata.total_questions} ข้อ | &nbsp;
-                            {editableData.metadata.total_score} คะแนน
-                        </p>
-                        <div className="mt-2 px-3 py-1 bg-green-600/20 border border-green-500/30 rounded-md">
-                            <p className="text-green-400 text-sm flex items-center">
-                                <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                </svg>
-                                ข้อมูลได้ถูกบันทึกลงฐานข้อมูลเรียบร้อยแล้ว
+                    <div className="lg:flex items-center space-x-3 mt-3 lg:mt-0">
+                        
+                        
+                        <div>
+                            <h2 className="text-2xl font-bold text-white">โจทย์ที่สร้างแล้ว</h2>
+                            <p className="text-gray-300 mt-1">
+                                {editableData.metadata.subject} - &nbsp;
+                                {editableData.metadata.level} | &nbsp;
+                                {editableData.metadata.total_questions} ข้อ | &nbsp;
+                                {editableData.metadata.total_score} คะแนน
                             </p>
+                            <div className="mt-2 px-3 py-1 bg-green-600/20 border border-green-500/30 rounded-md">
+                                <p className="text-green-400 text-sm flex items-center">
+                                    <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                    </svg>
+                                    ข้อมูลได้ถูกบันทึกลงฐานข้อมูลเรียบร้อยแล้ว
+                                </p>
+                            </div>
                         </div>
                     </div>
+
                     <div className="lg:flex items-center space-x-3 mt-3 lg:mt-0">
+                        {/* KaTeX Guide Button */}
+                        <KaTeXGuideButton />
                         {/* PDF Download Buttons */}
                         <button
                             onClick={() => downloadPDF(false)}
