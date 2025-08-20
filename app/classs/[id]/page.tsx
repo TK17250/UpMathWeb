@@ -394,14 +394,14 @@ const MediaCard = ({ mediaId, mediaName }: { mediaId: string; mediaName: string 
                         <p className="text-sm text-white/70 mb-2 text-center">
                             {extension.toUpperCase()} File
                         </p>
-                        <a
+                        <Link
                             href={signedUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="bg-[#80ED99] text-black px-4 py-2 rounded hover:bg-[#6bc47f] transition-colors"
                         >
                             Open File
-                        </a>
+                        </Link>
                     </div>
                 );
         }
