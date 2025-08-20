@@ -4,7 +4,7 @@ import { getUserData } from "./getuser";
 import axios from "axios";
 import fs from "fs";
 import path from "path";
-import { useEffect } from "react";
+
 
 // Environment detection
 const IS_VERCEL = process.env.VERCEL === "1" || process.env.VERCEL_ENV;
@@ -19,16 +19,6 @@ const HEADERS = {
 // Cache for frequently accessed data
 const cache = new Map();
 const CACHE_TTL = 30 * 1000; // Reduced to 30 seconds for debugging
-
-// This could run before user data is available
-useEffect(() => {
-  const fetchHomework = async () => {
-    // This runs regardless of user state
-    const res = await getHomework();
-    // ...
-  };
-  fetchHomework();
-}, []);
 
 // Empty dependency array - runs once on mount
 function withErrorHandling(fn: Function) {
