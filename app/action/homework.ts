@@ -622,13 +622,13 @@ async function generateQuestions(
     }
 
     // Optimized worker configuration for better performance
-    const MAX_CONCURRENT_REQUESTS = Math.min(3, totalQuestions); // Reduced from 5 to 3 for stability
-    const MAX_RETRIES_PER_BATCH = 2; // Reduced retries
+    const MAX_CONCURRENT_REQUESTS = Math.min(10, totalQuestions); 
+    const MAX_RETRIES_PER_BATCH = 2; 
 
     const questions: QuestionData[] = [];
     let questionId = 1;
     let totalAttempts = 0;
-    const maxAttempts = totalQuestions * 3; // Reduced from 4 to 3
+    const maxAttempts = totalQuestions * 3; 
 
     console.log(
       `🚀 Optimized generation: ${totalQuestions} questions with max ${MAX_CONCURRENT_REQUESTS} concurrent requests`

@@ -541,7 +541,7 @@ export default function CreateHomeworkModal({ isOpen, onClose, formAction, onSav
                             <p className="text-gray-300 mb-6 text-sm leading-relaxed">
                                 กรุณาอย่าปิดหน้าต่างหรือรีเฟรชหน้าเว็บ<br />
                                 ระบบกำลังสร้างโจทย์ด้วย AI<br />
-                                กระบวนการนี้อาจใช้เวลา 30-60 วินาที
+                                กระบวนการนี้อาจใช้เวลา 3-5 นาที
                             </p>
                             
                             {/* Loading Animation */}
