@@ -9,70 +9,30 @@ interface KaTeXRendererProps {
     className?: string;
 }
 
-export default function KaTeXRenderer({ children, displayMode = false, className = '' }: KaTeXRendererProps) {
+export default function KaTeXRenderer({ 
+    children, 
+    displayMode = false, 
+    className = '' 
+}: KaTeXRendererProps) {
     const containerRef = useRef<HTMLSpanElement>(null);
 
     useEffect(() => {
         if (containerRef.current && children) {
             try {
-                // Clean the container
                 containerRef.current.innerHTML = '';
                 
-                // Replace line breaks with <br> tags
-                // Handle both \n\n (double line breaks) and \n (single line breaks)
-                const processedText = children
-                    .replace(/\\n\\n/g, '<br><br>')  // Double escaped line breaks -> double <br>
-                    .replace(/\n\n/g, '<br><br>')    // Double line breaks -> double <br>
-                    .replace(/\\n/g, '<br>')         // Single escaped line breaks -> <br>
-                    .replace(/\n/g, '<br>');         // Single line breaks -> <br>
+                // Split text into math and non-math parts
+                const parts = splitTextAndMath(children, displayMode);
                 
-                // Replace multiple math expressions in the text
-                const mathRegex = displayMode 
-                    ? /\$\$(.*?)\$\$/g  // Display math $$...$$
-                    : /\$(.*?)\$/g;     // Inline math $...$
-                
-                const parts = processedText.split(mathRegex);
-                
-                parts.forEach((part, index) => {
-                    if (index % 2 === 0) {
-                        // Regular text with possible HTML
-                        if (part) {
-                            // Handle <br> tags by splitting and creating elements
-                            const htmlParts = part.split('<br>');
-                            htmlParts.forEach((htmlPart, htmlIndex) => {
-                                if (htmlPart) {
-                                    const textNode = document.createTextNode(htmlPart);
-                                    containerRef.current!.appendChild(textNode);
-                                }
-                                if (htmlIndex < htmlParts.length - 1) {
-                                    const brElement = document.createElement('br');
-                                    containerRef.current!.appendChild(brElement);
-                                }
-                            });
-                        }
+                parts.forEach(part => {
+                    if (part.isMath) {
+                        renderMathPart(part.content, containerRef.current!, part.display);
                     } else {
-                        // Math expression
-                        try {
-                            const mathSpan = document.createElement('span');
-                            katex.render(part, mathSpan, {
-                                displayMode: displayMode,
-                                throwOnError: false,
-                                errorColor: '#cc0000',
-                                strict: false,
-                                trust: true
-                            });
-                            containerRef.current!.appendChild(mathSpan);
-                        } catch (error) {
-                            // If KaTeX fails, show the original text
-                            const errorSpan = document.createElement('span');
-                            errorSpan.textContent = displayMode ? `$$${part}$$` : `$${part}$`;
-                            errorSpan.style.color = '#cc0000';
-                            containerRef.current!.appendChild(errorSpan);
-                        }
+                        renderTextPart(part.content, containerRef.current!);
                     }
                 });
             } catch (error) {
-                // Fallback: show original text
+                console.error('KaTeX rendering error:', error);
                 containerRef.current.textContent = children;
             }
         }
@@ -81,56 +41,127 @@ export default function KaTeXRenderer({ children, displayMode = false, className
     return <span ref={containerRef} className={className} />;
 }
 
-// Component for rendering mixed text with math
+// Helper function to split text into math and non-math parts
+function splitTextAndMath(text: string, defaultDisplayMode: boolean) {
+    const parts: Array<{content: string, isMath: boolean, display: boolean}> = [];
+    let remaining = text;
+    
+    // Handle line breaks first
+    remaining = remaining.replace(/\\n/g, '\n');
+    
+    // Regex to match both display ($$...$$) and inline ($...$) math
+    const mathRegex = /(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$)/g;
+    let lastIndex = 0;
+    let match;
+    
+    while ((match = mathRegex.exec(remaining)) !== null) {
+        // Add text before math
+        if (match.index > lastIndex) {
+            const textPart = remaining.substring(lastIndex, match.index);
+            if (textPart.trim()) {
+                parts.push({
+                    content: textPart,
+                    isMath: false,
+                    display: false
+                });
+            }
+        }
+        
+        // Add math part
+        const mathContent = match[0];
+        const isDisplayMath = mathContent.startsWith('$$') && mathContent.endsWith('$$');
+        const cleanMath = isDisplayMath 
+            ? mathContent.slice(2, -2).trim() 
+            : mathContent.slice(1, -1).trim();
+        
+        parts.push({
+            content: cleanMath,
+            isMath: true,
+            display: isDisplayMath || defaultDisplayMode
+        });
+        
+        lastIndex = match.index + match[0].length;
+    }
+    
+    // Add remaining text
+    if (lastIndex < remaining.length) {
+        const textPart = remaining.substring(lastIndex);
+        if (textPart.trim()) {
+            parts.push({
+                content: textPart,
+                isMath: false,
+                display: false
+            });
+        }
+    }
+    
+    return parts;
+}
+
+// Helper function to render math parts
+function renderMathPart(mathContent: string, container: HTMLElement, displayMode: boolean) {
+    try {
+        const mathSpan = document.createElement('span');
+        katex.render(mathContent, mathSpan, {
+            displayMode,
+            throwOnError: false,
+            trust: true,
+            strict: false,
+            macros: {
+                // Add common macros if needed
+                '\\RR': '\\mathbb{R}',
+                '\\NN': '\\mathbb{N}',
+                '\\ZZ': '\\mathbb{Z}',
+                '\\QQ': '\\mathbb{Q}'
+            }
+        });
+        container.appendChild(mathSpan);
+    } catch (error) {
+        console.error('Math rendering error:', error, 'Content:', mathContent);
+        // Fallback: show original math notation
+        const errorSpan = document.createElement('span');
+        const delimiter = displayMode ? '$$' : '$';
+        errorSpan.textContent = `${delimiter}${mathContent}${delimiter}`;
+        errorSpan.style.color = '#cc0000';
+        errorSpan.style.backgroundColor = '#fff3cd';
+        errorSpan.style.padding = '2px 4px';
+        errorSpan.style.borderRadius = '3px';
+        container.appendChild(errorSpan);
+    }
+}
+
+// Helper function to render text parts
+function renderTextPart(textContent: string, container: HTMLElement) {
+    const lines = textContent.split('\n');
+    lines.forEach((line, index) => {
+        if (line) {
+            container.appendChild(document.createTextNode(line));
+        }
+        if (index < lines.length - 1) {
+            container.appendChild(document.createElement('br'));
+        }
+    });
+}
+
+// Simplified component interfaces
 export function MathText({ children, className = '' }: { children: string; className?: string }) {
     return <KaTeXRenderer className={className}>{children}</KaTeXRenderer>;
 }
 
-// Component for rendering display math (block)
 export function MathDisplay({ children, className = '' }: { children: string; className?: string }) {
-    return <KaTeXRenderer displayMode={true} className={`block text-center ${className}`}>{children}</KaTeXRenderer>;
+    return (
+        <KaTeXRenderer 
+            displayMode={true} 
+            className={`block text-center my-4 ${className}`}
+        >
+            {children}
+        </KaTeXRenderer>
+    );
 }
 
-// Function to render math for PDF (returns HTML string)
+// This function is for PDF generation - it should NOT be used in the PDF generator
+// since PDF generators can't handle HTML/CSS from KaTeX
 export function renderMathForPDF(text: string): string {
-    try {
-        // Replace line breaks with HTML breaks for PDF
-        let result = text
-            .replace(/\\n\\n/g, '<br><br>')  // Double escaped line breaks
-            .replace(/\n\n/g, '<br><br>')    // Double line breaks
-            .replace(/\\n/g, '<br>')         // Single escaped line breaks
-            .replace(/\n/g, '<br>');         // Single line breaks
-        
-        // Handle display math first
-        result = result.replace(/\$\$(.*?)\$\$/g, (match, math) => {
-            try {
-                return katex.renderToString(math, {
-                    displayMode: true,
-                    throwOnError: false,
-                    strict: false,
-                    trust: true
-                });
-            } catch {
-                return match;
-            }
-        });
-        
-        // Handle inline math
-        result = result.replace(/\$(.*?)\$/g, (match, math) => {
-            try {
-                return katex.renderToString(math, {
-                    displayMode: false,
-                    throwOnError: false,
-                    strict: false,
-                    trust: true
-                });
-            } catch {
-                return match;
-            }
-        });
-        
-        return result;
-    } catch (error) {
-        return text;
-    }
+    console.warn('renderMathForPDF should not be used in PDF generation. Use the PDF generator\'s own math processing instead.');
+    return text; // Return original text to avoid errors
 }

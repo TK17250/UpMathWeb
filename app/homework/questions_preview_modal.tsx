@@ -1,8 +1,8 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { XMarkIcon, DocumentTextIcon, AcademicCapIcon, DocumentArrowDownIcon } from '@heroicons/react/24/outline';
 import { MathText } from '@/utils/katexRenderer';
-import { downloadPDF as generatePDF } from '@/utils/pdfGenerator';
+import { generatePDF} from '@/utils/pdfGenerator';
 import { deleteHomework } from '@/app/action/homework';
 import DeleteHomeworkModal from './delete_homework_modal';
 import 'katex/dist/katex.min.css';
@@ -76,6 +76,57 @@ export default function QuestionsPreviewModal({
             alert(`${title}: ${message}`);
         }
     };
+
+    // Helper function to insert equation at cursor position
+    const insertEquationAtCursor = useCallback((element: HTMLTextAreaElement | HTMLInputElement) => {
+        const startPos = element.selectionStart || 0;
+        const endPos = element.selectionEnd || 0;
+        const value = element.value;
+        
+        // Insert $ $ with cursor positioned between them
+        const newValue = value.slice(0, startPos) + '$ $' + value.slice(endPos);
+        element.value = newValue;
+        
+        // Set cursor position between the dollar signs
+        element.focus();
+        element.setSelectionRange(startPos + 2, startPos + 2);
+        
+        // Trigger change event to update state
+        const event = new Event('input', { bubbles: true });
+        element.dispatchEvent(event);
+    }, []);
+
+    // Handle keyboard shortcuts
+    const handleKeyDown = useCallback((e: KeyboardEvent) => {
+        // Only handle shortcuts in edit mode and when modal is open
+        if (!isOpen || activeTab !== 'edit') return;
+        
+        // Ctrl+E for equation starter
+        if (e.ctrlKey && e.key.toLowerCase() === 'e') {
+            e.preventDefault();
+            
+            // Get the currently focused element
+            const activeElement = document.activeElement;
+            if (activeElement && (activeElement.tagName === 'TEXTAREA' || activeElement.tagName === 'INPUT')) {
+                insertEquationAtCursor(activeElement as HTMLTextAreaElement | HTMLInputElement);
+                
+                // Show a subtle notification
+                showAlert(
+                    'สูตรคณิตศาสตร์',
+                    'เพิ่มสูตรคณิตศาสตร์เรียบร้อยแล้ว ใส่สูตรระหว่าง $ $',
+                    'info'
+                );
+            }
+        }
+    }, [isOpen, activeTab, insertEquationAtCursor, showAlert]);
+
+    // Add event listener for keyboard shortcuts
+    useEffect(() => {
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [handleKeyDown]);
 
     useEffect(() => {
         if (questionsData) {
@@ -417,6 +468,9 @@ export default function QuestionsPreviewModal({
                         >
                             <AcademicCapIcon className="w-5 h-5 inline mr-2" />
                             แก้ไข
+                            {activeTab === 'edit' && (
+                                <span className="ml-2 text-xs text-gray-400">(Ctrl+E สำหรับสูตร)</span>
+                            )}
                         </button>
                     </div>
                     

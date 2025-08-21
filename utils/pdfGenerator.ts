@@ -1,7 +1,5 @@
 'use client';
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
-import { renderMathForPDF } from './katexRenderer';
 import { getCachedFont } from './fontUtils';
 
 interface Question {
@@ -28,300 +26,349 @@ interface QuestionsData {
     questions: Question[];
 }
 
-// Load Thai font for jsPDF
+// Load Thai font
 const loadThaiFont = async (doc: jsPDF) => {
     try {
-        // Load THSarabunNew fonts
         const regularFont = await getCachedFont('regular');
         const boldFont = await getCachedFont('bold');
-        
-        // Add fonts to jsPDF
+
         doc.addFileToVFS('THSarabunNew.ttf', regularFont);
         doc.addFont('THSarabunNew.ttf', 'THSarabunNew', 'normal');
-        
+
         doc.addFileToVFS('THSarabunNew-Bold.ttf', boldFont);
         doc.addFont('THSarabunNew-Bold.ttf', 'THSarabunNew', 'bold');
-        
-        // Set default font
+
         doc.setFont('THSarabunNew', 'normal');
-        
-        console.log('Thai font loaded successfully');
-    } catch (error) {
-        console.warn('Thai font loading failed, using default font:', error);
+    } catch {
         doc.setFont('Arial', 'normal');
     }
 };
 
-// Helper function to process text with line breaks and math
-const processTextForPDF = async (text: string): Promise<string> => {
-    try {
-        // Replace \n\n with actual line breaks
-        let processedText = text.replace(/\\n\\n/g, '\n').replace(/\n\n/g, '\n');
-        
-        // Process math expressions with KaTeX
-        const mathProcessed = renderMathForPDF(processedText);
-        
-        // Strip HTML tags but preserve basic formatting
-        let plainText = mathProcessed.replace(/<br\s*\/?>/gi, '\n');
-        plainText = plainText.replace(/<\/p>/gi, '\n');
-        plainText = plainText.replace(/<p[^>]*>/gi, '');
-        plainText = plainText.replace(/<[^>]*>/g, '');
-        
-        // Decode HTML entities
-        const htmlEntities: { [key: string]: string } = {
-            '&lt;': '<',
-            '&gt;': '>',
-            '&amp;': '&',
-            '&quot;': '"',
-            '&#39;': "'",
-            '&nbsp;': ' ',
-            '&times;': '×',
-            '&divide;': '÷',
-            '&plusmn;': '±',
-            '&le;': '≤',
-            '&ge;': '≥',
-            '&ne;': '≠',
-            '&infin;': '∞',
-            '&sum;': 'Σ',
-            '&int;': '∫',
-            '&pi;': 'π',
-            '&alpha;': 'α',
-            '&beta;': 'β',
-            '&gamma;': 'γ',
-            '&theta;': 'θ',
-            '&lambda;': 'λ',
-            '&mu;': 'μ',
-            '&sigma;': 'σ',
-            '&phi;': 'φ',
-            '&omega;': 'ω'
+// ========== IMPROVED FRACTION DRAWER ==========
+const drawFraction = (
+    doc: jsPDF,
+    numerator: string,
+    denominator: string,
+    x: number,
+    y: number,
+    fontSize: number = 12
+) => {
+    const originalFontSize = fontSize;
+    const fracFontSize = Math.max(8, fontSize - 2); // Slightly smaller font for fractions
+    
+    doc.setFontSize(fracFontSize);
+
+    const numWidth = doc.getTextWidth(numerator);
+    const denWidth = doc.getTextWidth(denominator);
+    const fracWidth = Math.max(numWidth, denWidth) + 4; // Add padding
+    const lineLength = fracWidth - 2;
+
+    const numX = x + (fracWidth - numWidth) / 2;
+    const denX = x + (fracWidth - denWidth) / 2;
+
+    // Draw numerator above the line
+    doc.text(numerator, numX, y - 4);
+    
+    // Draw fraction line (slightly thicker and better positioned)
+    doc.setLineWidth(0.8);
+    doc.line(x + 1, y, x + lineLength + 1, y);
+    
+    // Draw denominator below the line
+    doc.text(denominator, denX, y + fracFontSize * 0.7 + 2);
+
+    // Reset font size
+    doc.setFontSize(originalFontSize);
+
+    return fracWidth + 3; // Return width including spacing
+};
+
+// ========== IMPROVED LATEX PARSER ==========
+const convertMathToUnicode = (mathText: string): string => {
+    let result = mathText.trim();
+
+    // Handle \text{} commands
+    result = result.replace(/\\text\{([^}]*)\}/g, '$1');
+
+    // Handle fractions - keep as placeholders for special rendering
+    result = result.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '__FRAC_$1_$2__');
+
+    // Handle square roots
+    result = result.replace(/\\sqrt\{([^}]+)\}/g, '√($1)');
+    result = result.replace(/\\sqrt/g, '√');
+
+    // Handle superscripts (improved to handle more cases)
+    result = result.replace(/\^(\{[^}]+\}|[a-zA-Z0-9+\-()]+)/g, (_, exp) => {
+        const cleanExp = exp.replace(/[{}]/g, '');
+        const superscripts: Record<string, string> = {
+            '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
+            '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
+            '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾',
+            'a': 'ᵃ', 'b': 'ᵇ', 'c': 'ᶜ', 'd': 'ᵈ', 'e': 'ᵉ',
+            'f': 'ᶠ', 'g': 'ᵍ', 'h': 'ʰ', 'i': 'ⁱ', 'j': 'ʲ',
+            'k': 'ᵏ', 'l': 'ˡ', 'm': 'ᵐ', 'n': 'ⁿ', 'o': 'ᵒ',
+            'p': 'ᵖ', 'r': 'ʳ', 's': 'ˢ', 't': 'ᵗ', 'u': 'ᵘ',
+            'v': 'ᵛ', 'w': 'ʷ', 'x': 'ˣ', 'y': 'ʸ', 'z': 'ᶻ'
         };
-        
-        Object.keys(htmlEntities).forEach(entity => {
-            const regex = new RegExp(entity, 'g');
-            plainText = plainText.replace(regex, htmlEntities[entity]);
-        });
-        
-        return plainText;
-    } catch (error) {
-        console.error('Error processing text for PDF:', error);
-        return text;
-    }
-};
-
-// Helper function to split text into lines
-const splitTextToLines = async (doc: jsPDF, text: string, maxWidth: number): Promise<string[]> => {
-    const processedText = await processTextForPDF(text);
-    const lines = doc.splitTextToSize(processedText, maxWidth);
-    return Array.isArray(lines) ? lines : [lines];
-};
-
-// Helper function to add HTML content to PDF
-const addHTMLContent = async (doc: jsPDF, htmlContent: string, x: number, y: number, maxWidth: number): Promise<number> => {
-    // For now, strip HTML and add as plain text
-    // In production, you might want to use html2canvas or similar
-    const plainText = htmlContent.replace(/<[^>]*>/g, '').replace(/\n+/g, '\n');
-    const lines = await splitTextToLines(doc, plainText, maxWidth);
-    
-    lines.forEach((line: string, index: number) => {
-        doc.text(line, x, y + (index * 6));
+        return cleanExp.split('').map((c: string) => superscripts[c] || c).join('');
     });
-    
-    return y + (lines.length * 6);
+
+    // Handle subscripts (improved)
+    result = result.replace(/_(\{[^}]+\}|[a-zA-Z0-9+\-()]+)/g, (_, sub) => {
+        const cleanSub = sub.replace(/[{}]/g, '');
+        const subscripts: Record<string, string> = {
+            '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄',
+            '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
+            '+': '₊', '-': '₋', '=': '₌', '(': '₍', ')': '₎',
+            'a': 'ₐ', 'e': 'ₑ', 'h': 'ₕ', 'i': 'ᵢ', 'j': 'ⱼ',
+            'k': 'ₖ', 'l': 'ₗ', 'm': 'ₘ', 'n': 'ₙ', 'o': 'ₒ',
+            'p': 'ₚ', 'r': 'ᵣ', 's': 'ₛ', 't': 'ₜ', 'u': 'ᵤ',
+            'v': 'ᵥ', 'x': 'ₓ'
+        };
+        return cleanSub.split('').map((c: string) => subscripts[c] || c).join('');
+    });
+
+    // Mathematical symbols
+    const mathSymbols: Record<string, string> = {
+        '\\times': '×', '\\cdot': '·', '\\div': '÷', '\\pm': '±', '\\mp': '∓',
+        '\\leq': '≤', '\\le': '≤', '\\geq': '≥', '\\ge': '≥',
+        '\\neq': '≠', '\\ne': '≠', '\\approx': '≈', '\\equiv': '≡',
+        '\\infty': '∞', '\\sum': 'Σ', '\\prod': 'Π', '\\int': '∫',
+        '\\pi': 'π', '\\theta': 'θ', '\\alpha': 'α', '\\beta': 'β',
+        '\\gamma': 'γ', '\\delta': 'δ', '\\epsilon': 'ε', '\\lambda': 'λ',
+        '\\mu': 'μ', '\\sigma': 'σ', '\\phi': 'φ', '\\omega': 'ω',
+        '\\leftarrow': '←', '\\rightarrow': '→', '\\leftrightarrow': '↔',
+        '\\Leftarrow': '⇐', '\\Rightarrow': '⇒', '\\Leftrightarrow': '⇔'
+    };
+
+    Object.entries(mathSymbols).forEach(([latex, unicode]) => {
+        result = result.replace(new RegExp(latex.replace(/\\/g, '\\\\'), 'g'), unicode);
+    });
+
+    // Clean up remaining LaTeX commands and brackets
+    result = result.replace(/\\[a-zA-Z]+\*?/g, ''); // Remove remaining commands
+    result = result.replace(/\{([^}]*)\}/g, '$1'); // Remove remaining braces
+    result = result.replace(/\s+/g, ' '); // Normalize spaces
+
+    return result.trim();
 };
 
+// ========== IMPROVED TEXT PROCESSOR ==========
+const processTextForPDF = async (text: string): Promise<string> => {
+    let processedText = text.replace(/\\n/g, '\n');
+
+    // Handle \text{} commands before processing math
+    processedText = processedText.replace(/\\text\{([^}]*)\}/g, '$1');
+
+    // Process display math ($$...$$)
+    processedText = processedText.replace(/\$\$([\s\S]+?)\$\$/g, (_, math) => {
+        return '\n' + convertMathToUnicode(math.trim()) + '\n';
+    });
+
+    // Process inline math ($...$)
+    processedText = processedText.replace(/\$([^$\n]+?)\$/g, (_, math) => {
+        return convertMathToUnicode(math.trim());
+    });
+
+    // Clean up extra newlines
+    processedText = processedText.replace(/\n\s*\n/g, '\n');
+
+    return processedText;
+};
+
+// ========== IMPROVED LINE RENDERER WITH FRACTIONS ==========
+const renderLineWithFractions = (doc: jsPDF, line: string, x: number, y: number): number => {
+    let remaining = line;
+    let cursorX = x;
+    let maxHeight = 8; // Default line height
+    
+    // Find all fraction matches first
+    const fracRegex = /__FRAC_(.+?)_(.+?)__/g;
+    let lastIndex = 0;
+    let match;
+
+    // Reset regex to start from beginning
+    fracRegex.lastIndex = 0;
+    
+    while ((match = fracRegex.exec(remaining)) !== null) {
+        const [fullMatch, numerator, denominator] = match;
+        const beforeText = remaining.substring(lastIndex, match.index);
+
+        // Render text before fraction
+        if (beforeText) {
+            doc.text(beforeText, cursorX, y);
+            cursorX += doc.getTextWidth(beforeText);
+        }
+
+        // Draw fraction and get its width
+        const fracWidth = drawFraction(doc, numerator, denominator, cursorX, y);
+        cursorX += fracWidth;
+        maxHeight = Math.max(maxHeight, 16); // Account for fraction height
+
+        lastIndex = match.index + fullMatch.length;
+    }
+
+    // Render any remaining text after the last fraction
+    const remainingText = remaining.substring(lastIndex);
+    if (remainingText) {
+        doc.text(remainingText, cursorX, y);
+    }
+
+    return maxHeight;
+};
+
+// ========== MAIN PDF GENERATOR ==========
 export const generatePDF = async (data: QuestionsData, includeAnswers: boolean = false): Promise<void> => {
-    try {
-        const doc = new jsPDF({
-            orientation: 'portrait',
-            unit: 'mm',
-            format: 'a4'
-        });
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    await loadThaiFont(doc);
 
-        await loadThaiFont(doc);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 20;
+    const contentWidth = pageWidth - margin * 2;
+    let currentY = margin;
 
-        const pageWidth = doc.internal.pageSize.getWidth();
-        const pageHeight = doc.internal.pageSize.getHeight();
-        const margin = 20;
-        const contentWidth = pageWidth - (margin * 2);
-        let currentY = margin;
+    const checkPageBreak = (requiredSpace: number = 20) => {
+        if (currentY > pageHeight - requiredSpace) {
+            doc.addPage();
+            currentY = margin;
+        }
+    };
 
-        // Title
-        doc.setFontSize(20);
+    // Title
+    doc.setFontSize(20);
+    doc.setFont('THSarabunNew', 'bold');
+    doc.text(`ชุดฝึกคณิตศาสตร์`, pageWidth / 2, currentY, { align: 'center' });
+    currentY += 12;
+
+    // Metadata
+    doc.setFontSize(12);
+    doc.setFont('THSarabunNew', 'normal');
+    const metadata = [
+        `วิชา: ${data.metadata.subject}`,
+        `ระดับ: ${data.metadata.level}`,
+        `ประเภท: ${data.metadata.type}`,
+        `จำนวนข้อ: ${data.metadata.total_questions} ข้อ`,
+        `คะแนนเต็ม: ${data.metadata.total_score} คะแนน`,
+        `วันที่สร้าง: ${new Date(data.metadata.created_at).toLocaleDateString('th-TH')}`
+    ];
+    
+    metadata.forEach(line => { 
+        doc.text(line, margin, currentY); 
+        currentY += 7; 
+    });
+    currentY += 10;
+
+    // Instructions
+    doc.setFontSize(10);
+    doc.text('คำแนะนำ: กรุณาเลือกคำตอบที่ถูกต้องที่สุด', margin, currentY);
+    currentY += 8;
+    doc.line(margin, currentY, pageWidth - margin, currentY);
+    currentY += 12;
+
+    // Questions
+    doc.setFontSize(12);
+    for (let index = 0; index < data.questions.length; index++) {
+        const q = data.questions[index];
+
+        checkPageBreak(50);
+
+        // Question header
         doc.setFont('THSarabunNew', 'bold');
-        const title = `ชุดฝึกคณิตศาสตร์`;
-        doc.text(title, pageWidth / 2, currentY, { align: 'center' });
+        doc.text(`ข้อที่ ${index + 1} (${q.score} คะแนน)`, margin, currentY);
         currentY += 10;
 
-        // Metadata
-        doc.setFontSize(12);
+        // Question text
         doc.setFont('THSarabunNew', 'normal');
-        const metadata = [
-            `วิชา: ${data.metadata.subject}`,
-            `ระดับ: ${data.metadata.level}`,
-            `ประเภท: ${data.metadata.type}`,
-            `จำนวนข้อ: ${data.metadata.total_questions} ข้อ`,
-            `คะแนนเต็ม: ${data.metadata.total_score} คะแนน`,
-            `วันที่สร้าง: ${new Date(data.metadata.created_at).toLocaleDateString('th-TH')}`
-        ];
-
-        metadata.forEach(line => {
-            doc.text(line, margin, currentY);
-            currentY += 6;
-        });
-
-        currentY += 10;
-
-        // Instructions
-        doc.setFontSize(10);
-        doc.text('คำแนะนำ: กรุณาเลือกคำตอบที่ถูกต้องที่สุด', margin, currentY);
-        currentY += 10;
-
-        // Draw line
-        doc.line(margin, currentY, pageWidth - margin, currentY);
-        currentY += 10;
-
-        // Questions
-        doc.setFontSize(12);
+        const processedQuestion = await processTextForPDF(q.question);
+        const questionLines = doc.splitTextToSize(processedQuestion, contentWidth);
         
-        for (let index = 0; index < data.questions.length; index++) {
-            const question = data.questions[index];
-            
-            // Check if we need a new page
-            if (currentY > pageHeight - 50) {
-                doc.addPage();
-                currentY = margin;
-            }
+        for (const line of questionLines) {
+            checkPageBreak();
+            const lineHeight = renderLineWithFractions(doc, line, margin, currentY);
+            currentY += lineHeight;
+        }
+        currentY += 6;
 
-            // Question number and score
+        // Options
+        if (q.options && q.options.length > 0) {
+            for (let optIndex = 0; optIndex < q.options.length; optIndex++) {
+                const optionLabel = String.fromCharCode(97 + optIndex); // a, b, c, d
+                const processedOption = await processTextForPDF(q.options[optIndex]);
+                const optionText = `${optionLabel}. ${processedOption}`;
+                const optionLines = doc.splitTextToSize(optionText, contentWidth - 10);
+                
+                for (const line of optionLines) {
+                    checkPageBreak();
+                    const lineHeight = renderLineWithFractions(doc, line, margin + 5, currentY);
+                    currentY += lineHeight;
+                }
+                currentY += 2;
+            }
+        }
+
+        currentY += 8;
+
+        // Answers (if requested)
+        if (includeAnswers) {
+            checkPageBreak(30);
+            
+            // Answer
             doc.setFont('THSarabunNew', 'bold');
-            const questionHeader = `ข้อที่ ${index + 1} (${question.score} คะแนน)`;
-            doc.text(questionHeader, margin, currentY);
+            doc.text('คำตอบ:', margin, currentY);
             currentY += 8;
 
-            // Question text
             doc.setFont('THSarabunNew', 'normal');
-            const questionLines = await splitTextToLines(doc, question.question, contentWidth);
-            questionLines.forEach((line: string) => {
-                if (currentY > pageHeight - 20) {
-                    doc.addPage();
-                    currentY = margin;
+            if (q.options && q.correct_option_index !== undefined) {
+                const correctAnswer = q.options[q.correct_option_index] || 'ไม่มีคำตอบ';
+                const processedAnswer = await processTextForPDF(correctAnswer);
+                const answerLines = doc.splitTextToSize(processedAnswer, contentWidth - 10);
+                
+                for (const line of answerLines) {
+                    checkPageBreak();
+                    const lineHeight = renderLineWithFractions(doc, line, margin + 5, currentY);
+                    currentY += lineHeight;
                 }
-                doc.text(line, margin, currentY);
-                currentY += 6;
-            });
-            currentY += 4;
-
-            // Options
-            if (question.options && question.options.length > 0) {
-                for (let optIndex = 0; optIndex < question.options.length; optIndex++) {
-                    const option = question.options[optIndex];
-                    if (currentY > pageHeight - 20) {
-                        doc.addPage();
-                        currentY = margin;
-                    }
-                    
-                    const optionText = `${String.fromCharCode(97 + optIndex)}. ${option}`;
-                    const optionLines = await splitTextToLines(doc, optionText, contentWidth - 10);
-                    
-                    optionLines.forEach((line: string, lineIndex: number) => {
-                        const prefix = lineIndex === 0 ? '' : '   ';
-                        doc.text(prefix + line, margin + 5, currentY);
-                        currentY += 6;
-                    });
-                }
-            } else {
-                // For open-ended questions, add space for answers
-                doc.setFontSize(10);
-                doc.text('คำตอบ: ________________________________', margin + 5, currentY);
-                currentY += 8;
-                doc.text('_________________________________________', margin + 5, currentY);
-                currentY += 8;
-                doc.text('_________________________________________', margin + 5, currentY);
-                currentY += 8;
-                doc.setFontSize(12);
             }
 
-            currentY += 5;
+            currentY += 8;
 
-            // Answer and explanation (if included)
-            if (includeAnswers) {
-                if (currentY > pageHeight - 30) {
-                    doc.addPage();
-                    currentY = margin;
-                }
+            // Explanation
+            doc.setFont('THSarabunNew', 'bold');
+            doc.text('วิธีทำ:', margin, currentY);
+            currentY += 8;
 
-                doc.setFont('THSarabunNew', 'bold');
-                doc.text('คำตอบ:', margin, currentY);
-                currentY += 6;
-                
-                doc.setFont('THSarabunNew', 'normal');
-                const answerLines = await splitTextToLines(doc, question.options ? question.options[question.correct_option_index || 0] : 'ไม่มีคำตอบ', contentWidth - 10);
-                answerLines.forEach((line: string) => {
-                    if (currentY > pageHeight - 20) {
-                        doc.addPage();
-                        currentY = margin;
-                    }
-                    doc.text(line, margin + 5, currentY);
-                    currentY += 6;
-                });
-                
-                currentY += 4;
-                
-                doc.setFont('THSarabunNew', 'bold');
-                doc.text('วิธีทำ:', margin, currentY);
-                currentY += 6;
-                
-                doc.setFont('THSarabunNew', 'normal');
-                const explanationLines = await splitTextToLines(doc, question.explanation, contentWidth - 10);
-                explanationLines.forEach((line: string) => {
-                    if (currentY > pageHeight - 20) {
-                        doc.addPage();
-                        currentY = margin;
-                    }
-                    doc.text(line, margin + 5, currentY);
-                    currentY += 6;
-                });
-                
-                currentY += 10;
-            } else {
-                currentY += 15; // Space for answer
+            doc.setFont('THSarabunNew', 'normal');
+            const processedExplanation = await processTextForPDF(q.explanation);
+            const explanationLines = doc.splitTextToSize(processedExplanation, contentWidth - 10);
+            
+            for (const line of explanationLines) {
+                checkPageBreak();
+                const lineHeight = renderLineWithFractions(doc, line, margin + 5, currentY);
+                currentY += lineHeight;
             }
-
-            // Draw separator line
-            if (index < data.questions.length - 1) {
-                if (currentY > pageHeight - 20) {
-                    doc.addPage();
-                    currentY = margin;
-                }
-                doc.line(margin, currentY, pageWidth - margin, currentY);
-                currentY += 10;
-            }
+            currentY += 12;
+        } else {
+            currentY += 20; // Space for student answers
         }
 
-        // Add footer with page numbers
-        const totalPages = doc.getNumberOfPages();
-        for (let i = 1; i <= totalPages; i++) {
-            doc.setPage(i);
-            doc.setFontSize(8);
-            doc.setFont('THSarabunNew', 'normal');
-            doc.text(`หน้า ${i} จาก ${totalPages}`, pageWidth - margin, pageHeight - 10, { align: 'right' });
+        // Separator line between questions
+        if (index < data.questions.length - 1) {
+            checkPageBreak(10);
+            doc.line(margin, currentY, pageWidth - margin, currentY);
+            currentY += 12;
         }
-
-        // Save the PDF
-        const filename = `${data.metadata.subject}_${includeAnswers ? 'with_answers' : 'questions_only'}_${Date.now()}.pdf`;
-        doc.save(filename);
-
-    } catch (error) {
-        console.error('Error generating PDF:', error);
-        throw new Error('ไม่สามารถสร้างไฟล์ PDF ได้');
     }
-};
 
-export const downloadPDF = async (data: QuestionsData, includeAnswers: boolean = false): Promise<void> => {
-    try {
-        await generatePDF(data, includeAnswers);
-    } catch (error) {
-        console.error('Error downloading PDF:', error);
-        alert('เกิดข้อผิดพลาดในการดาวน์โหลด PDF');
+    // Add page numbers
+    const totalPages = doc.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setFont('THSarabunNew', 'normal');
+        doc.text(`หน้า ${i} จาก ${totalPages}`, pageWidth - margin, pageHeight - 10, { align: 'right' });
     }
+
+    // Save the PDF
+    const filename = `${data.metadata.subject}_${includeAnswers ? 'with_answers' : 'questions_only'}_${Date.now()}.pdf`;
+    doc.save(filename);
 };
