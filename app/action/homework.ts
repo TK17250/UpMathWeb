@@ -622,7 +622,7 @@ async function generateQuestions(
     }
 
     // Optimized worker configuration for better performance
-    const MAX_CONCURRENT_REQUESTS = Math.min(10, totalQuestions); 
+    const MAX_CONCURRENT_REQUESTS = Math.min(5, totalQuestions); 
     const MAX_RETRIES_PER_BATCH = 2; 
 
     const questions: QuestionData[] = [];
