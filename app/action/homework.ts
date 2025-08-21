@@ -1071,7 +1071,7 @@ async function createHomeworkInternal(
   }
 }
 
-// Update homework
+// Update homework - FIXED VERSION
 async function updateHomeworkInternal(
   homeworkId: number,
   questionsData: any
@@ -1114,28 +1114,37 @@ async function updateHomeworkInternal(
       questionsData.questions = randomizeChoices(questionsData.questions);
     }
 
-    // Update homework in database
+    // Calculate total score from questions
+    const totalScore = questionsData.questions 
+      ? questionsData.questions.reduce((sum: number, q: any) => sum + (q.score || 0), 0)
+      : questionsData.metadata?.total_score || 0;
+
+    // Update the metadata with the new total score
+    if (questionsData.metadata) {
+      questionsData.metadata.total_score = totalScore;
+    }
+
+    // Update homework in database - REMOVED h_difficulty since it doesn't exist in schema
     const { error: updateError } = await supabase
       .from("homework")
       .update({
         h_content: questionsData,
-        h_score: Math.round(questionsData.metadata?.total_score || 0),
-        // Update difficulty using metadata
-        ...(questionsData.metadata?.difficulty_levels && {
-          h_difficulty: questionsData.metadata.difficulty_levels,
-        }),
+        h_score: Math.round(totalScore),
+        // Only update fields that exist in the database schema
+        // h_difficulty is NOT included since it doesn't exist
       })
       .eq("h_id", homeworkId)
       .eq("h_temail", userData.t_email);
 
     if (updateError) {
+      console.error("Database update error:", updateError);
       return {
         title: "เกิดข้อผิดพลาด",
         message: updateError.message,
         type: "error",
       };
     }
-
+    console.log(`💾 Saving homework to database...`);
     // Clear cache after successful update
     clearHomeworkCache(userData.t_email);
 

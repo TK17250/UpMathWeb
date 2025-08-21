@@ -127,7 +127,16 @@ export default function QuestionsPreviewModal({
     const handleSave = () => {
         if (editableData) {
             try {
-                onSave(editableData);
+                // Remove difficulty field from questions before saving to avoid database issues
+                const dataToSave = {
+                    ...editableData,
+                    questions: editableData.questions.map(question => {
+                        const { difficulty, ...questionWithoutDifficulty } = question;
+                        return questionWithoutDifficulty;
+                    })
+                };
+
+                onSave(dataToSave as any);
                 showAlert(
                     'บันทึกสำเร็จ',
                     'บันทึกการแก้ไขโจทย์เรียบร้อยแล้ว',
@@ -197,8 +206,7 @@ export default function QuestionsPreviewModal({
                         correct_option_index: q.correct_option_index,
                         explanation: q.explanation
                     }),
-                    score: q.score,
-                    difficulty: q.difficulty
+                    score: q.score
                 }))
             };
 
@@ -214,7 +222,7 @@ export default function QuestionsPreviewModal({
 
             showAlert(
                 'Export สำเร็จ',
-                `Export ข้อมูล${includeAnswers ? 'พร้อมเฉลย' : ''} JSON เรียบร้อยแล้ว`,
+                `Export ข้อมุล${includeAnswers ? 'พร้อมเฉลย' : ''} JSON เรียบร้อยแล้ว`,
                 'success'
             );
         } catch (error) {
@@ -458,9 +466,6 @@ export default function QuestionsPreviewModal({
                                                 </div>
                                                 <span className="text-sm text-gray-300 bg-[#2D4A5B] px-2 py-1 rounded">
                                                     {question.score} คะแนน
-                                                </span>
-                                                <span className="text-xs bg-[#80ED99] text-[#002D4A] px-2 py-1 rounded">
-                                                    {question.difficulty}
                                                 </span>
                                             </div>
                                             
